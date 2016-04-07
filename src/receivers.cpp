@@ -92,7 +92,10 @@ void ReceiversLine::distribute_receivers()
     const double x = (i == _n_receivers-1 ? x1 : x0 + i*dx);
     const double y = (i == _n_receivers-1 ? y1 : y0 + i*dy);
     const double z = (i == _n_receivers-1 ? z1 : z0 + i*dz);
-    _receivers[i] = Vertex(x, y, z);
+    if (_dimension == 2)
+      _receivers[i] = Vertex(x, y);
+    else // 3D
+      _receivers[i] = Vertex(x, y, z);
   }
 }
 

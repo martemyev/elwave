@@ -13,21 +13,21 @@ double RickerWavelet(const SourceParameters& source, double t);
 double GaussFirstDerivative(const SourceParameters& source, double t);
 
 void PointForce(const SourceParameters& source, const mfem::Vector& location,
-                const mfem::Vector& x, mfem::Vector& f);
+                const mfem::Vector& x, mfem::Vector& f, int dim);
 void MomentTensor(const SourceParameters& source, const mfem::Vector& location,
-                  const mfem::Vector& x, mfem::Vector& f);
+                  const mfem::Vector& x, mfem::Vector& f, int dim);
 
 void DeltaPointForce(const SourceParameters& source,
                      const mfem::Vector& location, const mfem::Vector& x,
-                     mfem::Vector& f);
+                     mfem::Vector& f, int dim);
 void GaussPointForce(const SourceParameters& source,
                      const mfem::Vector& location, const mfem::Vector& x,
-                     mfem::Vector& f);
+                     mfem::Vector& f, int dim);
 void DivDeltaMomentTensor(const SourceParameters&, const mfem::Vector&,
-                          const mfem::Vector&, mfem::Vector&);
+                          const mfem::Vector&, mfem::Vector&, int);
 void DivGaussMomentTensor(const SourceParameters& source,
                           const mfem::Vector& location, const mfem::Vector& x,
-                          mfem::Vector& f);
+                          mfem::Vector& f, int dim);
 
 
 
