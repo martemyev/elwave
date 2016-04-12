@@ -30,8 +30,16 @@ find_cells_containing_receivers(const Mesh &mesh)
   const bool throw_exception = true;
 
   for (int p = 0; p < _n_receivers; ++p)
+  {
     _cells_containing_receivers[p] = find_element(mesh, _receivers[p],
                                                   throw_exception);
+#if defined(SHOW_CELLS_CONTAINING_RECEIVERS)
+    std::cout << p << " ";
+    for (int i = 0; i < mesh.Dimension(); ++i)
+      std::cout << _receivers[p](i) << " ";
+    std::cout << _cells_containing_receivers[p] << "\n";
+#endif // SHOW_CELLS_CONTAINING_RECEIVERS
+  }
 }
 
 

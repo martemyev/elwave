@@ -10,6 +10,8 @@
   #define nullptr NULL
 #endif
 
+#cmakedefine SHOW_CELLS_CONTAINING_RECEIVERS
+
 const std::string SEISMOGRAMS_DIR = "seismograms/";
 const std::string SNAPSHOTS_DIR   = "snapshots/";
 
