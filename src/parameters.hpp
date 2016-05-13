@@ -8,7 +8,7 @@
 #include <string>
 #include <vector>
 
-static const char* DEFAULT_FILE_NAME = "no-file";
+static const char DEFAULT_FILE_NAME[] = "no-file";
 
 class ReceiversSet;
 class SnapshotsSet;

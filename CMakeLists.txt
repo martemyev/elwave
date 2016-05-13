@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 2.8)
 
 
-project(elwave CXX)
+project(elwave)
 
 
 if(NOT CMAKE_BUILD_TYPE)
@@ -89,6 +89,9 @@ if(BUILD_TYPE STREQUAL "PDEBUG" OR BUILD_TYPE STREQUAL "PRELEASE")
 endif()
 
 
+find_package(LAPACK REQUIRED)
+
+
 if(NOT(BUILD_TYPE STREQUAL "RELEASE") AND
    NOT(BUILD_TYPE STREQUAL "PRELEASE"))
   if(NOT(${CMAKE_CXX_COMPILER_ID} STREQUAL "MSVC"))
@@ -125,6 +128,7 @@ endif()
 
 add_executable(${PROJECT_NAME} ${SRC_LIST} ${HDR_LIST})
 target_link_libraries(${PROJECT_NAME} ${MFEM_LIBRARY})
+target_link_libraries(${PROJECT_NAME} ${LAPACK_LIBRARIES})
 if(CMAKE_SYSTEM_NAME MATCHES "Linux")
   target_link_libraries(${PROJECT_NAME} rt)
 endif()
