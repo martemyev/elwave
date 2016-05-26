@@ -29,15 +29,21 @@ find_cells_containing_receivers(const Mesh &mesh)
   // we throw an exception if we don't find a cell containing a receiver
   const bool throw_exception = true;
 
+  std::vector<double> cell_limits(6);
+
   for (int p = 0; p < _n_receivers; ++p)
   {
-    _cells_containing_receivers[p] = find_element(mesh, _receivers[p],
-                                                  throw_exception);
+    _cells_containing_receivers[p] = 
+        find_element(mesh, _receivers[p], cell_limits, throw_exception);
+
 #if defined(SHOW_CELLS_CONTAINING_RECEIVERS)
     std::cout << p << " ";
     for (int i = 0; i < mesh.Dimension(); ++i)
       std::cout << _receivers[p](i) << " ";
-    std::cout << _cells_containing_receivers[p] << "\n";
+    std::cout << _cells_containing_receivers[p] << " : ";
+    for (size_t i = 0; i < cell_limits.size(); ++i)
+      std::cout << cell_limits[i] << " ";
+    std::cout << std::endl;
 #endif // SHOW_CELLS_CONTAINING_RECEIVERS
   }
 }

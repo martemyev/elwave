@@ -308,7 +308,8 @@ void Parameters::init(int argc, char **argv)
     ifstream in(grid.meshfile);
     MFEM_VERIFY(in, "File can't be opened");
     const int refine = 0;
-    mesh = new Mesh(in, generate_edges, refine);
+    const bool fix_orientation = false; // true is default
+    mesh = new Mesh(in, generate_edges, refine, fix_orientation);
     double xmin = DBL_MAX, xmax = DBL_MIN;
     double ymin = DBL_MAX, ymax = DBL_MIN;
     double zmin = DBL_MAX, zmax = DBL_MIN;

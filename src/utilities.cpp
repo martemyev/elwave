@@ -252,7 +252,8 @@ void get_limits(const Mesh &mesh, const Element &element,
 
 
 
-int find_element(const Mesh &mesh, const Vertex &point, bool throw_exception)
+int find_element(const Mesh &mesh, const Vertex &point,
+                 std::vector<double> &cell_limits, bool throw_exception)
 {
   const int dim = mesh.Dimension();
   MFEM_VERIFY(dim == 2 || dim == 3, "Wrong dimension");
@@ -263,7 +264,8 @@ int find_element(const Mesh &mesh, const Vertex &point, bool throw_exception)
 
   const double tol = FIND_CELL_TOLERANCE;
 
-  for (int el = 0; el < mesh.GetNE(); ++el)
+//  for (int el = 0; el < mesh.GetNE(); ++el)
+  for (int el = mesh.GetNE() - 1; el >= 0; --el)
   {
     const Element *element = mesh.GetElement(el);
     if (dim == 2)
@@ -277,15 +279,14 @@ int find_element(const Mesh &mesh, const Vertex &point, bool throw_exception)
                   "element has to be a hexahedron");
     }
 
-    std::vector<double> limits(6);
-    get_limits(mesh, *element, limits);
+    get_limits(mesh, *element, cell_limits);
 
-    const double x0 = limits[0];
-    const double y0 = limits[1];
-    const double z0 = limits[2];
-    const double x1 = limits[3];
-    const double y1 = limits[4];
-    const double z1 = limits[5];
+    const double x0 = cell_limits[0];
+    const double y0 = cell_limits[1];
+    const double z0 = cell_limits[2];
+    const double x1 = cell_limits[3];
+    const double y1 = cell_limits[4];
+    const double z1 = cell_limits[5];
 
     if (dim == 2)
     {

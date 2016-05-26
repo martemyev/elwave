@@ -115,7 +115,7 @@ void get_limits(const mfem::Mesh &mesh, const mfem::Element &element,
                 std::vector<double> &limits);
 
 int find_element(const mfem::Mesh &mesh, const mfem::Vertex &point,
-                 bool throw_exception);
+                 std::vector<double> &cell_limits, bool throw_exception);
 
 std::string endianness();
 

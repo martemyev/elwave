@@ -18,6 +18,6 @@ const std::string SNAPSHOTS_DIR   = "snapshots/";
 const double VERY_SMALL_NUMBER = 1e-32;
 const double FLOAT_NUMBERS_EQUALITY_TOLERANCE = 1e-12;
 const double FLOAT_NUMBERS_EQUALITY_REDUCED_TOLERANCE = 1e-6;
-const double FIND_CELL_TOLERANCE = 1e-12;
+const double FIND_CELL_TOLERANCE = 1e-4;
 
 #endif // CONFIG_HPP
