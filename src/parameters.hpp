@@ -28,6 +28,7 @@ public:
   int nx, ny, nz; ///< number of cells in x-, y- and z-directions
 
   const char* meshfile; ///< name of file with mesh
+  bool fix_orientation; ///< if we need to fix the mesh orientation
 
   void AddOptions(mfem::OptionsParser& args);
   void check_parameters() const;

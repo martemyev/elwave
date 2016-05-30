@@ -22,6 +22,7 @@ GridParameters::GridParameters()
   , ny(10)
   , nz(10)
   , meshfile(DEFAULT_FILE_NAME)
+  , fix_orientation(true)
 { }
 
 void GridParameters::AddOptions(OptionsParser& args)
@@ -33,6 +34,9 @@ void GridParameters::AddOptions(OptionsParser& args)
   args.AddOption(&ny, "-ny", "--numbery", "Number of elements in y-direction");
   args.AddOption(&nz, "-nz", "--numberz", "Number of elements in z-direction");
   args.AddOption(&meshfile, "-meshfile", "--mesh-file", "Name of file with mesh");
+  args.AddOption(&fix_orientation, "-fix-orientation", "--fix-orientation",
+                 "-no-fix-orientation", "--no-fix-orientation", "If we need to "
+                 "fix mesh orientation");
 }
 
 void GridParameters::check_parameters() const
@@ -308,8 +312,7 @@ void Parameters::init(int argc, char **argv)
     ifstream in(grid.meshfile);
     MFEM_VERIFY(in, "File can't be opened");
     const int refine = 0;
-    const bool fix_orientation = false; // true is default
-    mesh = new Mesh(in, generate_edges, refine, fix_orientation);
+    mesh = new Mesh(in, generate_edges, refine, grid.fix_orientation);
     double xmin = DBL_MAX, xmax = DBL_MIN;
     double ymin = DBL_MAX, ymax = DBL_MIN;
     double zmin = DBL_MAX, zmax = DBL_MIN;
