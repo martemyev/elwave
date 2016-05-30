@@ -40,6 +40,19 @@ Vector compute_function_at_point(const Mesh& mesh, const Vertex& point,
   MFEM_VERIFY(dim == 2 || dim == 3, "Wrong dimension");
 
   const Element* element = mesh.GetElement(cell);
+
+  Array<int> vert_indices;
+  element->GetVertices(vert_indices);
+
+  double x0, x1, y0, y1, z0, z1;
+
+  const double *vert0 = mesh.GetVertex(vert_indices[0]);
+  const double *vert2 = mesh.GetVertex(vert_indices[2]);
+  x0 = vert0[0];
+  y0 = vert0[1];
+  x1 = vert2[0];
+  y1 = vert2[1];
+
   if (dim == 2)
   {
     MFEM_VERIFY(dynamic_cast<const Quadrilateral*>(element), "The mesh "
@@ -49,36 +62,16 @@ Vector compute_function_at_point(const Mesh& mesh, const Vertex& point,
   {
     MFEM_VERIFY(dynamic_cast<const Hexahedron*>(element), "The mesh "
                 "element has to be a hexahedron");
-  }
-
-  std::vector<double> limits(6);
-  get_limits(mesh, *element, limits);
-
-  const double x0 = limits[0];
-  const double y0 = limits[1];
-  const double z0 = limits[2];
-  const double x1 = limits[3];
-  const double y1 = limits[4];
-  const double z1 = limits[5];
-
-  const double hx = x1 - x0;
-  const double hy = y1 - y0;
-  const double hz = z1 - z0;
-
-  if (dim == 2)
-  {
-    MFEM_VERIFY(hx > 0 && hy > 0, "Size of the quad is wrong");
-  }
-  else
-  {
-    MFEM_VERIFY(hx > 0 && hy > 0 && hz > 0, "Size of the hex is wrong");
+    const double *vert6 = mesh.GetVertex(vert_indices[6]);
+    z0 = vert0[2];
+    z1 = vert6[2];
   }
 
   IntegrationPoint ip;
-  ip.x = (point(0) - x0) / hx; // transfer to the reference space [0,1]^d
-  ip.y = (point(1) - y0) / hy;
+  ip.x = (point(0) - x0) / (x1 - x0); // transfer to the reference space [0,1]^d
+  ip.y = (point(1) - y0) / (y1 - y0);
   if (dim == 3)
-    ip.z = (point(2) - z0) / hz;
+    ip.z = (point(2) - z0) / (z1 - z0);
 
   Vector values;
   U.GetVectorValue(cell, ip, values);
