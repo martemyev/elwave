@@ -39,9 +39,16 @@ private:
    */
   void run_SEM_SRM();
 
+  /**
+   * Discontinuous Galerkin method
+   */
+  void run_DG();
+
   void run_SEM_SRM_serial();
+  void run_DG_serial();
 #if defined(MFEM_USE_MPI)
   void run_SEM_SRM_parallel();
+  void run_DG_parallel();
 #endif
 };
 

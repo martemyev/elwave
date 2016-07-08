@@ -11,18 +11,22 @@ using namespace mfem;
 
 void ElasticWave::run()
 {
-  if (!strcmp(param.method, "fem") || !strcmp(param.method, "FEM"))
+  if (!strcmp(param.method.name, "fem") || !strcmp(param.method.name, "FEM"))
   {
     //run_FEM_ALID();
     MFEM_ABORT("FEM method is not implemented");
   }
-  else if (!strcmp(param.method, "sem") || !strcmp(param.method, "SEM"))
+  else if (!strcmp(param.method.name, "sem") || !strcmp(param.method.name, "SEM"))
   {
     run_SEM_SRM();
   }
+  else if (!strcmp(param.method.name, "dg") || !strcmp(param.method.name, "DG"))
+  {
+    run_DG();
+  }
   else
   {
-    MFEM_ABORT("Unknown method to be used: " + string(param.method));
+    MFEM_ABORT("Unknown method to be used: " << param.method.name);
   }
 }
 
