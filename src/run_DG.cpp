@@ -92,6 +92,9 @@ void ElasticWave::run_DG_serial()
   cout << "Stif matrix..." << flush;
   BilinearForm stif(&fespace);
   stif.AddDomainIntegrator(new ElasticityIntegrator(lambda_coef, mu_coef));
+  stif.AddInteriorFaceIntegrator(
+     new DGElasticityIntegrator(lambda_coef, mu_coef,
+                                param.method.dg_sigma, param.method.dg_kappa));
   stif.AddBdrFaceIntegrator(
      new DGElasticityIntegrator(lambda_coef, mu_coef,
                                 param.method.dg_sigma, param.method.dg_kappa));
