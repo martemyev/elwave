@@ -44,11 +44,22 @@ private:
    */
   void run_DG();
 
+  /**
+   * Generalized multiscale finite element method
+   */
+  void run_GMsFEM() const;
+
+  void compute_basis_CG(mfem::Mesh *fine_mesh, int n_boundary_bf, int n_interior_bf,
+                        mfem::Coefficient &rho_coef, mfem::Coefficient &lambda_coef,
+                        mfem::Coefficient &mu_coef, mfem::DenseMatrix &R) const;
+
   void run_SEM_SRM_serial();
   void run_DG_serial();
+  void run_GMsFEM_serial() const;
 #if defined(MFEM_USE_MPI)
   void run_SEM_SRM_parallel();
   void run_DG_parallel();
+  void run_GMsFEM_parallel() const;
 #endif
 };
 
@@ -136,5 +147,14 @@ void output_snapshots(int time_step, const std::string& snapshot_filebase,
 void output_seismograms(const Parameters& param, const mfem::Mesh& mesh,
                         const mfem::GridFunction &U, const mfem::GridFunction &V,
                         std::ofstream* &seisU, std::ofstream* &seisV);
+
+void solve_dsygvd(const mfem::DenseMatrix &A, const mfem::DenseMatrix &B,
+                  mfem::DenseMatrix &eigenvectors);
+
+extern "C" {
+void dsygvd_(int *ITYPE, char *JOBZ, char *UPLO, int *N, double *A, int *LDA,
+             double *B, int *LDB, double *W, double *WORK, int *LWORK,
+             int *IWORK, int *LIWORK, int *INFO);
+}
 
 #endif // ELASTIC_WAVE3D_HPP

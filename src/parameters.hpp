@@ -30,6 +30,10 @@ public:
   const char* meshfile; ///< name of file with mesh
   bool fix_orientation; ///< if we need to fix the mesh orientation
 
+  double get_hx() const { return sx / nx; }
+  double get_hy() const { return sy / ny; }
+  double get_hz() const { return sz / nz; }
+
   void AddOptions(mfem::OptionsParser& args);
   void check_parameters() const;
 

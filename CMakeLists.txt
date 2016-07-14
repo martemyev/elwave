@@ -12,6 +12,9 @@ string(TOUPPER ${CMAKE_BUILD_TYPE} BUILD_TYPE)
 message(STATUS "BUILD_TYPE ${BUILD_TYPE}")
 
 add_definitions("-std=c++0x -Wall") # some extra flags
+if(BUILD_TYPE STREQUAL "DEBUG" OR BUILD_TYPE STREQUAL "PDEBUG")
+  add_definitions("-g")
+endif()
 
 #-------------------------------------------------------------------------------
 # MFEM

@@ -24,6 +24,10 @@ void ElasticWave::run()
   {
     run_DG();
   }
+  else if (!strcmp(param.method.name, "gmsfem") || !strcmp(param.method.name, "GMsFEM"))
+  {
+    run_GMsFEM();
+  }
   else
   {
     MFEM_ABORT("Unknown method to be used: " << param.method.name);
@@ -203,5 +207,77 @@ void output_seismograms(const Parameters& param, const Mesh& mesh,
   } // loop over receiver sets
 }
 
+
+
+void solve_dsygvd(const DenseMatrix &A, const DenseMatrix &B, DenseMatrix &eigenvectors)
+{
+  int ITYPE = 1; // solve Ax = \lambda Bx
+  char JOBZ = 'V'; // get eigenvectors
+  char UPLO = 'L'; // upper or lower triangle is used
+
+  int N = A.Height(); // matrix dimension
+  double *a_data = new double[N*N];
+  {
+    const double *d = A.Data();
+    for (int i = 0; i < N*N; ++i)
+      a_data[i] = d[i];
+  }
+
+  int LDA = N; // leading dimension of A
+  double *b_data = new double[N*N];
+  {
+    const double *d = B.Data();
+    for (int i = 0; i < N*N; ++i)
+      b_data[i] = d[i];
+  }
+
+  int LDB = N; // leading dimension of B
+
+  double *eigenvalues = new double[N];
+
+  int LWORK = 1 + 6*N + 2*N*N;
+  double *WORK = new double[LWORK];
+
+  int LIWORK = 3 + 5*N;
+  int *IWORK = new int[LIWORK];
+
+  int INFO;
+  dsygvd_(&ITYPE,
+          &JOBZ,
+          &UPLO,
+          &N,
+          a_data,
+          &LDA,
+          b_data,
+          &LDB,
+          eigenvalues,
+          WORK,
+          &LWORK,
+          IWORK,
+          &LIWORK,
+          &INFO);
+
+  delete[] IWORK;
+  delete[] WORK;
+  delete[] eigenvalues;
+  delete[] b_data;
+
+  if (INFO != 0)
+  {
+    std::cerr << "\nINFO = " << INFO << "\nN = " << N << std::endl;
+    MFEM_ABORT("The solution of the eigenproblem is not found");
+  }
+
+//  for (int i = 0; i < N; ++i)
+//    math::normalize(N, &a_data[i*N]);
+
+  for (int i = 0, k = 0; i < N; ++i)
+  {
+    for (int j = 0; j < N; ++j, ++k)
+      eigenvectors(j, i) = a_data[k];
+  }
+
+  delete[] a_data;
+}
 
 
