@@ -109,15 +109,17 @@ void SourceParameters::check_parameters() const
 //
 //------------------------------------------------------------------------------
 MediaPropertiesParameters::MediaPropertiesParameters()
-  : rho(2500)
-  , vp(3500)
-  , vs(2000)
+  : rho(2.5)
+  , vp(3.5)
+  , vs(2.0)
   , rhofile(DEFAULT_FILE_NAME)
   , vpfile(DEFAULT_FILE_NAME)
   , vsfile(DEFAULT_FILE_NAME)
   , rho_array(nullptr)
   , vp_array(nullptr)
   , vs_array(nullptr)
+  , lambda_array(nullptr)
+  , mu_array(nullptr)
   , min_rho(DBL_MAX), max_rho(DBL_MIN)
   , min_vp (DBL_MAX), max_vp (DBL_MIN)
   , min_vs (DBL_MAX), max_vs (DBL_MIN)
@@ -128,6 +130,8 @@ MediaPropertiesParameters::~MediaPropertiesParameters()
   delete[] rho_array;
   delete[] vp_array;
   delete[] vs_array;
+  delete[] lambda_array;
+  delete[] mu_array;
 }
 
 void MediaPropertiesParameters::AddOptions(OptionsParser& args)
@@ -150,6 +154,8 @@ void MediaPropertiesParameters::init(int n_elements)
   rho_array = new double[n_elements];
   vp_array = new double[n_elements];
   vs_array = new double[n_elements];
+  lambda_array = new double[n_elements];
+  mu_array = new double[n_elements];
 
   if (!strcmp(rhofile, DEFAULT_FILE_NAME))
   {
@@ -182,6 +188,15 @@ void MediaPropertiesParameters::init(int n_elements)
   {
     read_binary(vsfile, n_elements, vs_array);
     get_minmax(vs_array, n_elements, min_vs, max_vs);
+  }
+
+  for (int i = 0; i < n_elements; ++i)
+  {
+    const double Rho = rho_array[i];
+    const double Vp  = vp_array[i];
+    const double Vs  = vs_array[i];
+    lambda_array[i] = Rho * (Vp*Vp - 2.*Vs*Vs);
+    mu_array[i] = Rho*Vs*Vs;
   }
 }
 

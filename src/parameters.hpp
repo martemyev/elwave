@@ -91,8 +91,10 @@ public:
   const char *vpfile;
   const char *vsfile;
 
-  double *rho_array, *vp_array, *vs_array; ///< arrays of values describing
-                                           ///< media properties
+  /**
+   * Arrays of values describing media properties
+   */
+  double *rho_array, *vp_array, *vs_array, *lambda_array, *mu_array;
 
   double min_rho, max_rho, min_vp, max_vp, min_vs, max_vs;
 

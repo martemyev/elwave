@@ -99,7 +99,6 @@ void ElasticWave::run_GMsFEM_serial() const
   chrono.Start();
 
   const int dim = param.dimension;
-  const int n_elements = param.mesh->GetNE();
 
   cout << "FE space generation..." << flush;
   FiniteElementCollection *fec = new DG_FECollection(param.method.order, dim);
@@ -108,12 +107,9 @@ void ElasticWave::run_GMsFEM_serial() const
 
   cout << "Number of unknowns: " << fespace.GetVSize() << endl;
 
-  const double rho = 2.5e+3;
-  const double vp  = 3.5e+3;
-  const double vs  = 2.0e+3;
-  ConstantCoefficient rho_coef(rho);
-  ConstantCoefficient lambda_coef(rho*(vp*vp - 2.*vs*vs));
-  ConstantCoefficient mu_coef(rho*vs*vs);
+  CWConstCoefficient rho_coef(param.media.rho_array, false);
+  CWConstCoefficient lambda_coef(param.media.lambda_array, false);
+  CWConstCoefficient mu_coef(param.media.mu_array, false);
 
   cout << "Fine scale stif matrix..." << flush;
   chrono.Clear();
@@ -224,29 +220,26 @@ void ElasticWave::run_GMsFEM_serial() const
         Mesh *ccell_fine_mesh =
             new Mesh(n_fine_x, n_fine_y, Element::QUADRILATERAL, gen_edges, SX, SY);
 
-//        double *local_rho = new double[n_fine_x * n_fine_y];
-//        double *local_vp  = new double[n_fine_x * n_fine_y];
-//        double *local_vs  = new double[n_fine_x * n_fine_y];
-//        for (int fiy = 0; fiy < n_fine_y; ++fiy)
-//        {
-//          for (int fix = 0; fix < n_fine_x; ++fix)
-//          {
-//            const int loc_cell = fiy*n_fine_x + fix;
-////            const int glob_cell = (offset_y + fiy) * param.grid.nx +
-////                                  (offset_x + fix);
+        double *local_rho    = new double[n_fine_x * n_fine_y];
+        double *local_lambda = new double[n_fine_x * n_fine_y];
+        double *local_mu     = new double[n_fine_x * n_fine_y];
+        for (int fiy = 0; fiy < n_fine_y; ++fiy)
+        {
+          for (int fix = 0; fix < n_fine_x; ++fix)
+          {
+            const int loc_cell = fiy*n_fine_x + fix;
+            const int glob_cell = (offset_y + fiy) * param.grid.nx +
+                                  (offset_x + fix);
 
-//            local_rho[loc_cell] = rho; // one_over_rho[glob_cell];
-//            local_vp[loc_cell]  = vp;  // one_over_K[glob_cell];
-//            local_vs[loc_cell]  = vs;
-//          }
-//        }
-//        const bool own_array = true;
-//        CWConstCoefficient local_rho_coef(local_one_over_rho, own_array);
-//        CWConstCoefficient local_lambda_coef(local_one_over_K, own_array);
+            local_rho[loc_cell]    = param.media.rho_array[glob_cell];
+            local_lambda[loc_cell] = param.media.lambda_array[glob_cell];
+            local_mu[loc_cell]     = param.media.mu_array[glob_cell];
+          }
+        }
 
-        ConstantCoefficient local_rho_coef(rho);
-        ConstantCoefficient local_lambda_coef(rho*(vp*vp - 2.*vs*vs));
-        ConstantCoefficient local_mu_coef(rho*vs*vs);
+        CWConstCoefficient local_rho_coef(local_rho, true);
+        CWConstCoefficient local_lambda_coef(local_lambda, true);
+        CWConstCoefficient local_mu_coef(local_mu, true);
 
         const int coarse_cell = iy*param.method.gms_Nx + ix;
 
@@ -327,31 +320,30 @@ void ElasticWave::run_GMsFEM_serial() const
                        n_fine_cell_per_coarse_z[iz],
                        Element::HEXAHEDRON, gen_edges, SX, SY, SZ);
 
-//          double *local_one_over_rho = new double[n_fine_x * n_fine_y * n_fine_z];
-//          double *local_one_over_K   = new double[n_fine_x * n_fine_y * n_fine_z];
-//          for (int fiz = 0; fiz < n_fine_z; ++fiz)
-//          {
-//            for (int fiy = 0; fiy < n_fine_y; ++fiy)
-//            {
-//              for (int fix = 0; fix < n_fine_x; ++fix)
-//              {
-//                const int loc_cell = fiz*n_fine_x*n_fine_y + fiy*n_fine_x + fix;
-//                const int glob_cell = (offset_z + fiz) * param.grid.nx * param.grid.ny +
-//                                      (offset_y + fiy) * param.grid.nx +
-//                                      (offset_x + fix);
+          double *local_rho    = new double[n_fine_x * n_fine_y * n_fine_z];
+          double *local_lambda = new double[n_fine_x * n_fine_y * n_fine_z];
+          double *local_mu     = new double[n_fine_x * n_fine_y * n_fine_z];
+          for (int fiz = 0; fiz < n_fine_z; ++fiz)
+          {
+            for (int fiy = 0; fiy < n_fine_y; ++fiy)
+            {
+              for (int fix = 0; fix < n_fine_x; ++fix)
+              {
+                const int loc_cell = fiz*n_fine_x*n_fine_y + fiy*n_fine_x + fix;
+                const int glob_cell = (offset_z + fiz) * param.grid.nx * param.grid.ny +
+                                      (offset_y + fiy) * param.grid.nx +
+                                      (offset_x + fix);
 
-//                local_one_over_rho[loc_cell] = one_over_rho[glob_cell];
-//                local_one_over_K[loc_cell]   = one_over_K[glob_cell];
-//              }
-//            }
-//          }
-//          const bool own_array = true;
-//          CWConstCoefficient local_one_over_rho_coef(local_one_over_rho, own_array);
-//          CWConstCoefficient local_one_over_K_coef(local_one_over_K, own_array);
+                local_rho[loc_cell]    = param.media.rho_array[glob_cell];
+                local_lambda[loc_cell] = param.media.lambda_array[glob_cell];
+                local_mu[loc_cell]     = param.media.mu_array[glob_cell];
+              }
+            }
+          }
 
-          ConstantCoefficient local_rho_coef(rho);
-          ConstantCoefficient local_lambda_coef(rho*(vp*vp - 2.*vs*vs));
-          ConstantCoefficient local_mu_coef(rho*vs*vs);
+          CWConstCoefficient local_rho_coef(local_rho, true);
+          CWConstCoefficient local_lambda_coef(local_lambda, true);
+          CWConstCoefficient local_mu_coef(local_mu, true);
 
           const int coarse_cell = iz*param.method.gms_Nx*param.method.gms_Ny +
                                   iy*param.method.gms_Nx + ix;

@@ -4,6 +4,8 @@
 #include "receivers.hpp"
 #include "utilities.hpp"
 
+#include <float.h>
+
 using namespace std;
 using namespace mfem;
 
