@@ -49,7 +49,8 @@ int main(int argc, char *argv[])
     ElasticWave elwave(param);
     elwave.run();
 
-    cout << "\nTOTAL TIME " << chrono.RealTime() << " sec\n" << endl;
+    if (myid == 0)
+      cout << "\nTOTAL TIME " << chrono.RealTime() << " sec\n" << endl;
   }
   catch (int ierr)
   {

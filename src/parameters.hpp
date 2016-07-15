@@ -223,6 +223,7 @@ public:
   OutputParameters output;
 
   mfem::Mesh *mesh;
+  mfem::ParMesh *par_mesh;
 
   double T; ///< simulation time
   double dt; ///< time step

@@ -28,20 +28,6 @@ void ElasticWave::run_GMsFEM() const
 
 
 
-#if defined(MFEM_USE_MPI)
-void ElasticWave::run_GMsFEM_parallel() const
-{
-  int size;
-  MPI_Comm_size(MPI_COMM_WORLD, &size);
-  if (size == 1)
-    run_GMsFEM_serial();
-  else
-    MFEM_ABORT("NOT implemented");
-}
-#endif // MFEM_USE_MPI
-
-
-
 void fill_up_n_fine_cells_per_coarse(int n_fine, int n_coarse,
                                      std::vector<int> &result)
 {
@@ -90,12 +76,41 @@ static void time_step(const SparseMatrix &M, const SparseMatrix &S,
 
 
 
+static void par_time_step(HypreParMatrix &M, HypreParMatrix &S,
+                          HypreParVector &b, double timeval, double dt,
+                          Solver &solver, HypreParVector &U_0,
+                          HypreParVector &U_1, HypreParVector &U_2)
+{
+  HypreParVector y = U_1; y *= 2.0; y -= U_2;        // y = 2*u_1 - u_2
+
+  HypreParVector z0 = U_0;                           // z0 = M * (2*u_1 - u_2)
+  M.Mult(y, z0);
+
+  HypreParVector z1 = U_0;                           // z1 = S * u_1
+  S.Mult(U_1, z1);
+  HypreParVector z2 = b; z2 *= timeval; // z2 = timeval*source
+
+  // y = dt^2 * (S*u_1 - timeval*source), where it can be
+  // y = dt^2 * (S*u_1 - ricker*pointforce) OR
+  // y = dt^2 * (S*u_1 - gaussfirstderivative*momenttensor)
+  y = z1; y -= z2; y *= dt*dt;
+
+  // RHS = M*(2*u_1-u_2) - dt^2*(S*u_1-timeval*source)
+  HypreParVector RHS = z0; RHS -= y;
+
+  solver.Mult(RHS, U_0);
+
+  U_2 = U_1;
+  U_1 = U_0;
+}
+
+
+
 void ElasticWave::run_GMsFEM_serial() const
 {
   MFEM_VERIFY(param.mesh, "The mesh is not initialized");
 
   StopWatch chrono;
-
   chrono.Start();
 
   const int dim = param.dimension;
@@ -635,4 +650,212 @@ void ElasticWave::run_GMsFEM_serial() const
 
   delete fec;
 }
+
+
+
+#if defined(MFEM_USE_MPI)
+void ElasticWave::run_GMsFEM_parallel() const
+{
+  MFEM_VERIFY(param.mesh, "The serial mesh is not initialized");
+  MFEM_VERIFY(param.par_mesh, "The parallel mesh is not initialized");
+
+  int myid;
+  MPI_Comm_rank(MPI_COMM_WORLD, &myid);
+
+  StopWatch chrono;
+  chrono.Start();
+
+  const int dim = param.dimension;
+
+  cout << "FE space generation..." << flush;
+  DG_FECollection fec(param.method.order, dim);
+  ParFiniteElementSpace fespace(param.par_mesh, &fec, dim);
+  cout << "done. Time = " << chrono.RealTime() << " sec" << endl;
+
+  if (myid == 0)
+    cout << "Number of unknowns: " << fespace.GlobalTrueVSize() << endl;
+
+  CWConstCoefficient rho_coef(param.media.rho_array, false);
+  CWConstCoefficient lambda_coef(param.media.lambda_array, false);
+  CWConstCoefficient mu_coef(param.media.mu_array, false);
+
+  if (myid == 0)
+    cout << "Fine scale stif matrix..." << flush;
+  chrono.Clear();
+  ParBilinearForm stif_fine(&fespace);
+  stif_fine.AddDomainIntegrator(new ElasticityIntegrator(lambda_coef, mu_coef));
+  stif_fine.AddInteriorFaceIntegrator(
+     new DGElasticityIntegrator(lambda_coef, mu_coef,
+                                param.method.dg_sigma, param.method.dg_kappa));
+  stif_fine.AddBdrFaceIntegrator(
+     new DGElasticityIntegrator(lambda_coef, mu_coef,
+                                param.method.dg_sigma, param.method.dg_kappa));
+  stif_fine.Assemble();
+
+  HypreParMatrix *S_fine = stif_fine.ParallelAssemble();
+  if (myid == 0)
+    cout << "done. Time = " << chrono.RealTime() << " sec" << endl;
+
+
+  if (myid == 0)
+    cout << "Fine scale mass matrix..." << flush;
+  chrono.Clear();
+  ParBilinearForm mass_fine(&fespace);
+  mass_fine.AddDomainIntegrator(new VectorMassIntegrator(rho_coef));
+  mass_fine.Assemble();
+
+  HypreParMatrix *M_fine = mass_fine.ParallelAssemble();
+  if (myid == 0)
+    cout << "done. Time = " << chrono.RealTime() << " sec" << endl;
+
+  //HypreParMatrix SysFine((hypre_ParCSRMatrix*)(*M_fine));
+  //SysFine = 0.0;
+  //SysFine += D;
+  //SysFine += M_fine;
+
+
+  if (myid == 0)
+    cout << "Fine scale RHS vector... " << flush;
+  chrono.Clear();
+  ParLinearForm b_fine(&fespace);
+  if (param.source.plane_wave)
+  {
+    PlaneWaveSource plane_wave_source(dim, param);
+    b_fine.AddDomainIntegrator(new VectorDomainLFIntegrator(plane_wave_source));
+    b_fine.Assemble();
+  }
+  else
+  {
+    if (!strcmp(param.source.type, "pointforce"))
+    {
+      VectorPointForce vector_point_force(dim, param);
+      b_fine.AddDomainIntegrator(new VectorDomainLFIntegrator(vector_point_force));
+      b_fine.Assemble();
+    }
+    else if (!strcmp(param.source.type, "momenttensor"))
+    {
+      MomentTensorSource momemt_tensor_source(dim, param);
+      b_fine.AddDomainIntegrator(new VectorDomainLFIntegrator(momemt_tensor_source));
+      b_fine.Assemble();
+    }
+    else MFEM_ABORT("Unknown source type: " + string(param.source.type));
+  }
+  if (myid == 0)
+    cout << "||b_h||_L2 = " << b_fine.Norml2() << endl
+         << "done. Time = " << chrono.RealTime() << " sec" << endl;
+  HypreParVector b(&fespace);
+  b_fine.ParallelAssemble(b);
+
+
+  HypreBoomerAMG amg(*M_fine);
+  HyprePCG pcg(*M_fine);
+  pcg.SetTol(1e-12);
+  pcg.SetMaxIter(200);
+  pcg.SetPrintLevel(2);
+  pcg.SetPreconditioner(amg);
+
+
+  const string method_name = "parGMsFEM_";
+
+  if (myid == 0)
+    cout << "Open seismograms files..." << flush;
+  ofstream *seisU; // for displacement
+  ofstream *seisV; // for velocity
+  if (myid == 0)
+    open_seismo_outs(seisU, seisV, param, method_name);
+  if (myid == 0)
+    cout << "done. Time = " << chrono.RealTime() << " sec" << endl;
+  chrono.Clear();
+
+  HypreParVector U_0(*M_fine);
+  U_0 = 0.0;
+  HypreParVector U_1 = U_0;
+  HypreParVector U_2 = U_0;
+  ParGridFunction u_0(&fespace, &U_0);
+
+  const int n_time_steps = param.T / param.dt + 0.5; // nearest integer
+  const int tenth = 0.1 * n_time_steps;
+
+  cout << "N time steps = " << n_time_steps
+       << "\nTime loop..." << endl;
+
+  // the values of the time-dependent part of the source
+  vector<double> time_values(n_time_steps);
+  for (int time_step = 1; time_step <= n_time_steps; ++time_step)
+  {
+    const double cur_time = time_step * param.dt;
+    time_values[time_step-1] = RickerWavelet(param.source,
+                                             cur_time - param.dt);
+  }
+
+  const string name = method_name + param.output.extra_string;
+  const string pref_path = string(param.output.directory) + "/" + SNAPSHOTS_DIR;
+  VisItDataCollection visit_dc(name.c_str(), param.mesh);
+  visit_dc.SetPrefixPath(pref_path.c_str());
+//  visit_dc.RegisterField("fine_pressure", &u_fine_0);
+  visit_dc.RegisterField("coarse_pressure", &u_0);
+  {
+    visit_dc.SetCycle(0);
+    visit_dc.SetTime(0.0);
+//    Vector u_tmp(u_fine_0.Size());
+//    R_global_T->Mult(U_0, u_tmp);
+//    u_0.MakeRef(&fespace, u_tmp, 0);
+    visit_dc.Save();
+  }
+
+  StopWatch time_loop_timer;
+  time_loop_timer.Start();
+  double time_of_snapshots = 0.;
+  double time_of_seismograms = 0.;
+  for (int t_step = 1; t_step <= n_time_steps; ++t_step)
+  {
+    {
+      par_time_step(*M_fine, *S_fine, b, time_values[t_step-1],
+                    param.dt, pcg, U_0, U_1, U_2);
+    }
+    {
+//      time_step(M_fine, S_fine, b_fine, time_values[t_step-1],
+//                param.dt, SysFine, PrecFine, u_fine_0, u_fine_1, u_fine_2);
+    }
+
+    // Compute and print the L^2 norm of the error
+    if (t_step % tenth == 0) {
+      cout << "step " << t_step << " / " << n_time_steps
+           << " ||U||_{L^2} = " << U_0.Norml2()
+           /*<< " ||u||_{L^2} = " << u_fine_0.Norml2()*/ << endl;
+    }
+
+    if (t_step % param.step_snap == 0) {
+      StopWatch timer;
+      timer.Start();
+      visit_dc.SetCycle(t_step);
+      visit_dc.SetTime(t_step*param.dt);
+//      Vector u_tmp(u_fine_0.Size());
+//      R_global_T->Mult(U_0, u_tmp);
+//      u_0.MakeRef(&fespace, u_tmp, 0);
+      visit_dc.Save();
+      timer.Stop();
+      time_of_snapshots += timer.UserTime();
+    }
+
+//    if (t_step % param.step_seis == 0) {
+//      StopWatch timer;
+//      timer.Start();
+//      R_global_T.Mult(U_0, u_0);
+//      output_seismograms(param, *param.mesh, u_0, seisU);
+//      timer.Stop();
+//      time_of_seismograms += timer.UserTime();
+//    }
+  }
+
+  time_loop_timer.Stop();
+
+  delete[] seisU;
+  delete[] seisV;
+
+  cout << "Time loop is over\n\tpure time = " << time_loop_timer.UserTime()
+       << "\n\ttime of snapshots = " << time_of_snapshots
+       << "\n\ttime of seismograms = " << time_of_seismograms << endl;
+}
+#endif // MFEM_USE_MPI
 
