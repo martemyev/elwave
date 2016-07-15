@@ -297,6 +297,49 @@ void MethodParameters::check_parameters() const
 
 //------------------------------------------------------------------------------
 //
+// Output parameters
+//
+//------------------------------------------------------------------------------
+OutputParameters::OutputParameters()
+  : directory("output")
+  , extra_string("")
+  , coarse_matrices(false)
+  , view_snapshot_space(false)
+  , view_boundary_basis(false)
+  , view_interior_basis(false)
+  , view_dg_basis(false)
+{ }
+
+void OutputParameters::AddOptions(OptionsParser& args)
+{
+  args.AddOption(&directory, "-outdir", "--output-dir", "Directory to save results of computations");
+  args.AddOption(&extra_string, "-extra", "--extra", "Extra string for naming output files");
+  args.AddOption(&coarse_matrices, "-outcmat", "--output-coarse-matrices",
+                 "-no-outcmat", "--no-output-coarse-matrices",
+                 "Output coarse scale matrices (may take long)");
+  args.AddOption(&view_snapshot_space, "-viewsnapspace", "--view-snapshot-space",
+                 "-no-viewsnapspace", "--no-view-snapshot-space",
+                 "Visualize solution of snapshot space (via GLVis)");
+  args.AddOption(&view_boundary_basis, "-viewboubasis", "--view-boundary-basis",
+                 "-no-viewboubasis", "--no-view-boundary-basis",
+                 "Visualize boundary basis (via GLVis)");
+  args.AddOption(&view_interior_basis, "-viewintbasis", "--view-interior-basis",
+                 "-no-viewintbasis", "--no-view-interior-basis",
+                 "Visualize interior basis (via GLVis)");
+  args.AddOption(&view_dg_basis, "-viewdgbasis", "--view-dg-basis",
+                 "-no-viewdgbasis", "--no-view-dg-basis",
+                 "Visualize DG multiscale basis (via GLVis)");
+}
+
+void OutputParameters::check_parameters() const
+{
+  // nothing to check
+}
+
+
+
+//------------------------------------------------------------------------------
+//
 // All parameters of the problem to be solved
 //
 //------------------------------------------------------------------------------
@@ -307,14 +350,13 @@ Parameters::Parameters()
   , media()
   , bc()
   , method()
+  , output()
   , mesh(nullptr)
   , T(1.0)
   , dt(1e-3)
   , step_snap(1000)
   , step_seis(1)
   , receivers_file(DEFAULT_FILE_NAME)
-  , output_dir("output")
-  , extra_string("")
 { }
 
 Parameters::~Parameters()
@@ -342,8 +384,8 @@ void Parameters::init(int argc, char **argv)
   args.AddOption(&step_snap, "-step-snap", "--step-snapshot", "Time step for outputting snapshots");
   args.AddOption(&step_seis, "-step-seis", "--step-seismogram", "Time step for outputting seismograms");
   args.AddOption(&receivers_file, "-rec-file", "--receivers-file", "File with information about receivers");
-  args.AddOption(&output_dir, "-outdir", "--output-dir", "Directory to save results of computations");
-  args.AddOption(&extra_string, "-extra", "--extra", "Extra string for naming output files");
+
+  output.AddOptions(args);
 
   args.Parse();
   if (!args.Good())
@@ -442,11 +484,11 @@ void Parameters::init(int argc, char **argv)
   }
 
   {
-    string cmd = "mkdir -p " + (string)output_dir + " ; ";
-    cmd += "mkdir -p " + (string)output_dir + "/" + SNAPSHOTS_DIR + " ; ";
-    cmd += "mkdir -p " + (string)output_dir + "/" + SEISMOGRAMS_DIR + " ; ";
+    string cmd = "mkdir -p " + (string)output.directory + " ; ";
+    cmd += "mkdir -p " + (string)output.directory + "/" + SNAPSHOTS_DIR + " ; ";
+    cmd += "mkdir -p " + (string)output.directory + "/" + SEISMOGRAMS_DIR + " ; ";
     const int res = system(cmd.c_str());
-    MFEM_VERIFY(res == 0, "Failed to create a directory " + (string)output_dir);
+    MFEM_VERIFY(res == 0, "Failed to create a directory " + (string)output.directory);
   }
 }
 
@@ -460,6 +502,7 @@ void Parameters::check_parameters() const
   media.check_parameters();
   bc.check_parameters();
   method.check_parameters();
+  output.check_parameters();
 
   MFEM_VERIFY(T > 0, "Time (" + d2s(T) + ") must be >0");
   MFEM_VERIFY(dt < T, "dt (" + d2s(dt) + ") must be < T (" + d2s(T) + ")");

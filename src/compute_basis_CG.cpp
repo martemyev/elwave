@@ -5,10 +5,10 @@
 using namespace std;
 using namespace mfem;
 
-#define VIEW_SNAPSHOT_SPACE
-#define VIEW_BOUNDARY_BASIS
-#define VIEW_INTERIOR_BASIS
-#define VIEW_DG_BASIS
+//#define VIEW_SNAPSHOT_SPACE
+//#define VIEW_BOUNDARY_BASIS
+//#define VIEW_INTERIOR_BASIS
+//#define VIEW_DG_BASIS
 
 
 static
@@ -71,7 +71,7 @@ void compute_boundary_basis_CG(const Parameters &param, Mesh *fine_mesh,
       stif.RecoverFEMSolution(X, b, x);
     }
 
-#if defined(VIEW_SNAPSHOT_SPACE)
+    if (param.output.view_snapshot_space)
     {
       char vishost[] = "localhost";
       int  visport   = 19916;
@@ -94,7 +94,6 @@ void compute_boundary_basis_CG(const Parameters &param, Mesh *fine_mesh,
       }
       mode_sock.close();
     }
-#endif
   }
   cout << "done. Time = " << chrono.RealTime() << " sec" << endl;
 
@@ -144,7 +143,7 @@ void compute_boundary_basis_CG(const Parameters &param, Mesh *fine_mesh,
   delete WTEMW;
   delete WTSW;
 
-#if defined(VIEW_BOUNDARY_BASIS)
+  if (param.output.view_boundary_basis)
   {
     char vishost[] = "localhost";
     int  visport   = 19916;
@@ -167,7 +166,6 @@ void compute_boundary_basis_CG(const Parameters &param, Mesh *fine_mesh,
     }
     mode_sock.close();
   }
-#endif
 }
 
 
@@ -244,7 +242,7 @@ void compute_interior_basis_CG(const Parameters &param, Mesh *fine_mesh,
   delete par_M;
   delete par_S;
 
-#if defined(VIEW_INTERIOR_BASIS)
+  if (param.output.view_interior_basis)
   {
     char vishost[] = "localhost";
     int  visport   = 19916;
@@ -267,7 +265,6 @@ void compute_interior_basis_CG(const Parameters &param, Mesh *fine_mesh,
     }
     mode_sock.close();
   }
-#endif
 }
 
 
@@ -304,7 +301,7 @@ void project_to_DG_space(const Parameters &param, Mesh *fine_mesh,
     y = vec_DG;
   }
 
-#if defined(VIEW_DG_BASIS)
+  if (param.output.view_dg_basis)
   {
     char vishost[] = "localhost";
     int  visport   = 19916;
@@ -327,7 +324,6 @@ void project_to_DG_space(const Parameters &param, Mesh *fine_mesh,
     }
     mode_sock.close();
   }
-#endif
 }
 
 

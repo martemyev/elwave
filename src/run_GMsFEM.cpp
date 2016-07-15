@@ -8,7 +8,7 @@ using namespace std;
 using namespace mfem;
 
 //#define BASIS_DG
-#define OUTPUT_MATRIX
+//#define OUTPUT_MATRIX
 
 
 
@@ -457,73 +457,74 @@ void ElasticWave::run_GMsFEM_serial() const
   //SysCoarse += *M_coarse;
   GSSmoother PrecCoarse(SysCoarse);
 
-#if defined(OUTPUT_MATRIX)
+  if (param.output.coarse_matrices)
   {
-    chrono.Clear();
-    cout << "Output R local matrices..." << flush;
-    for (size_t r = 0; r < R.size(); ++r) {
-      const string fname = string(param.output_dir) + "/r" + d2s(r) + "_local_mat.dat";
+    {
+      chrono.Clear();
+      cout << "Output R local matrices..." << flush;
+      for (size_t r = 0; r < R.size(); ++r) {
+        const string fname = string(param.output.directory) + "/r" + d2s(r) + "_local_mat.dat";
+        ofstream mout(fname.c_str());
+        MFEM_VERIFY(mout, "Cannot open file " + fname);
+        R[r].PrintMatlab(mout);
+      }
+      cout << "done. Time = " << chrono.RealTime() << " sec" << endl;
+    }
+    {
+      chrono.Clear();
+      cout << "Output R_global matrix..." << flush;
+      const string fname = string(param.output.directory) + "/r_global_mat.dat";
       ofstream mout(fname.c_str());
       MFEM_VERIFY(mout, "Cannot open file " + fname);
-      R[r].PrintMatlab(mout);
+      R_global.PrintMatlab(mout);
+      cout << "done. Time = " << chrono.RealTime() << " sec" << endl;
     }
-    cout << "done. Time = " << chrono.RealTime() << " sec" << endl;
+    {
+      chrono.Clear();
+      cout << "Output R_global_T matrix..." << flush;
+      const string fname = string(param.output.directory) + "/r_global_mat_t.dat";
+      ofstream mout(fname.c_str());
+      MFEM_VERIFY(mout, "Cannot open file " + fname);
+      R_global_T->PrintMatlab(mout);
+      cout << "done. Time = " << chrono.RealTime() << " sec" << endl;
+    }
+    {
+      chrono.Clear();
+      cout << "Output M_fine matrix..." << flush;
+      const string fname = string(param.output.directory) + "/m_fine_mat.dat";
+      ofstream mout(fname.c_str());
+      MFEM_VERIFY(mout, "Cannot open file " + fname);
+      M_fine.PrintMatlab(mout);
+      cout << "done. Time = " << chrono.RealTime() << " sec" << endl;
+    }
+    {
+      chrono.Clear();
+      cout << "Output S_fine matrix..." << flush;
+      const string fname = string(param.output.directory) + "/s_fine_mat.dat";
+      ofstream mout(fname.c_str());
+      MFEM_VERIFY(mout, "Cannot open file " + fname);
+      S_fine.PrintMatlab(mout);
+      cout << "done. Time = " << chrono.RealTime() << " sec" << endl;
+    }
+    {
+      chrono.Clear();
+      cout << "Output M_coarse matrix..." << flush;
+      const string fname = string(param.output.directory) + "/m_coarse_mat.dat";
+      ofstream mout(fname.c_str());
+      MFEM_VERIFY(mout, "Cannot open file " + fname);
+      M_coarse->PrintMatlab(mout);
+      cout << "done. Time = " << chrono.RealTime() << " sec" << endl;
+    }
+    {
+      chrono.Clear();
+      cout << "Output S_coarse matrix..." << flush;
+      const string fname = string(param.output.directory) + "/s_coarse_mat.dat";
+      ofstream mout(fname.c_str());
+      MFEM_VERIFY(mout, "Cannot open file " + fname);
+      S_coarse->PrintMatlab(mout);
+      cout << "done. Time = " << chrono.RealTime() << " sec" << endl;
+    }
   }
-  {
-    chrono.Clear();
-    cout << "Output R_global matrix..." << flush;
-    const string fname = string(param.output_dir) + "/r_global_mat.dat";
-    ofstream mout(fname.c_str());
-    MFEM_VERIFY(mout, "Cannot open file " + fname);
-    R_global.PrintMatlab(mout);
-    cout << "done. Time = " << chrono.RealTime() << " sec" << endl;
-  }
-  {
-    chrono.Clear();
-    cout << "Output R_global_T matrix..." << flush;
-    const string fname = string(param.output_dir) + "/r_global_mat_t.dat";
-    ofstream mout(fname.c_str());
-    MFEM_VERIFY(mout, "Cannot open file " + fname);
-    R_global_T->PrintMatlab(mout);
-    cout << "done. Time = " << chrono.RealTime() << " sec" << endl;
-  }
-  {
-    chrono.Clear();
-    cout << "Output M_fine matrix..." << flush;
-    const string fname = string(param.output_dir) + "/m_fine_mat.dat";
-    ofstream mout(fname.c_str());
-    MFEM_VERIFY(mout, "Cannot open file " + fname);
-    M_fine.PrintMatlab(mout);
-    cout << "done. Time = " << chrono.RealTime() << " sec" << endl;
-  }
-  {
-    chrono.Clear();
-    cout << "Output S_fine matrix..." << flush;
-    const string fname = string(param.output_dir) + "/s_fine_mat.dat";
-    ofstream mout(fname.c_str());
-    MFEM_VERIFY(mout, "Cannot open file " + fname);
-    S_fine.PrintMatlab(mout);
-    cout << "done. Time = " << chrono.RealTime() << " sec" << endl;
-  }
-  {
-    chrono.Clear();
-    cout << "Output M_coarse matrix..." << flush;
-    const string fname = string(param.output_dir) + "/m_coarse_mat.dat";
-    ofstream mout(fname.c_str());
-    MFEM_VERIFY(mout, "Cannot open file " + fname);
-    M_coarse->PrintMatlab(mout);
-    cout << "done. Time = " << chrono.RealTime() << " sec" << endl;
-  }
-  {
-    chrono.Clear();
-    cout << "Output S_coarse matrix..." << flush;
-    const string fname = string(param.output_dir) + "/s_coarse_mat.dat";
-    ofstream mout(fname.c_str());
-    MFEM_VERIFY(mout, "Cannot open file " + fname);
-    S_coarse->PrintMatlab(mout);
-    cout << "done. Time = " << chrono.RealTime() << " sec" << endl;
-  }
-#endif
 
   const string method_name = "GMsFEM_";
 
@@ -560,8 +561,8 @@ void ElasticWave::run_GMsFEM_serial() const
                                              cur_time - param.dt);
   }
 
-  const string name = method_name + param.extra_string;
-  const string pref_path = string(param.output_dir) + "/" + SNAPSHOTS_DIR;
+  const string name = method_name + param.output.extra_string;
+  const string pref_path = string(param.output.directory) + "/" + SNAPSHOTS_DIR;
   VisItDataCollection visit_dc(name.c_str(), param.mesh);
   visit_dc.SetPrefixPath(pref_path.c_str());
   visit_dc.RegisterField("fine_pressure", &u_fine_0);
@@ -594,7 +595,7 @@ void ElasticWave::run_GMsFEM_serial() const
     if (t_step % tenth == 0) {
       cout << "step " << t_step << " / " << n_time_steps
            << " ||U||_{L^2} = " << U_0.Norml2()
-           << " ||u||_{L^2} = " << u_fine_0.Norml2() << endl;
+           /*<< " ||u||_{L^2} = " << u_fine_0.Norml2()*/ << endl;
     }
 
     if (t_step % param.step_snap == 0) {

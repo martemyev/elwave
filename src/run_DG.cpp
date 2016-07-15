@@ -179,8 +179,8 @@ void ElasticWave::run_DG_serial()
     }
   } else MFEM_ABORT("Unknown source type: " + string(param.source.type));
 
-  const string name = method_name + param.extra_string;
-  const string pref_path = (string)param.output_dir + "/" + SNAPSHOTS_DIR;
+  const string name = method_name + param.output.extra_string;
+  const string pref_path = (string)param.output.directory + "/" + SNAPSHOTS_DIR;
   VisItDataCollection visit_dc(name.c_str(), param.mesh);
   visit_dc.SetPrefixPath(pref_path.c_str());
   visit_dc.RegisterField("displacement", &u_0);
@@ -436,9 +436,9 @@ void ElasticWave::run_DG_parallel()
   const int n_time_steps = param.T / param.dt + 0.5; // round to the nearest int
   const int tenth = 0.1 * n_time_steps;
 
-  const string snapshot_filebase = (string)param.output_dir + "/" +
+  const string snapshot_filebase = (string)param.output.directory + "/" +
                                    SNAPSHOTS_DIR + method_name +
-                                   param.extra_string;
+                                   param.output.extra_string;
   const int N = u_0.Size();
 
   if (myid == 0)

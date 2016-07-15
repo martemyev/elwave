@@ -130,8 +130,8 @@ void open_seismo_outs(ofstream* &seisU, ofstream* &seisV,
 
     if (variable.find("U") != string::npos) {
       for (int c = 0; c < dim; ++c) {
-        string seismofile = (string)param.output_dir + "/" + SEISMOGRAMS_DIR +
-                            method_name + param.extra_string + desc + "_u" +
+        string seismofile = (string)param.output.directory + "/" + SEISMOGRAMS_DIR +
+                            method_name + param.output.extra_string + desc + "_u" +
                             d2s(c) + ".bin";
         seisU[r*dim + c].open(seismofile.c_str(), ios::binary);
         MFEM_VERIFY(seisU[r*dim + c], "File '" + seismofile +
@@ -141,8 +141,8 @@ void open_seismo_outs(ofstream* &seisU, ofstream* &seisV,
 
     if (variable.find("V") != string::npos) {
       for (int c = 0; c < dim; ++c) {
-        string seismofile = (string)param.output_dir + "/" + SEISMOGRAMS_DIR +
-                            method_name + param.extra_string + desc + "_v" +
+        string seismofile = (string)param.output.directory + "/" + SEISMOGRAMS_DIR +
+                            method_name + param.output.extra_string + desc + "_v" +
                             d2s(c) + ".bin";
         seisV[r*dim + c].open(seismofile.c_str(), ios::binary);
         MFEM_VERIFY(seisV[r*dim + c], "File '" + seismofile +
