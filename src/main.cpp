@@ -12,9 +12,11 @@ using namespace mfem;
 int main(int argc, char *argv[])
 {
   int myid = 0;
+  int size = 1;
 #ifdef MFEM_USE_MPI
   MPI_Init(&argc, &argv);
   MPI_Comm_rank(MPI_COMM_WORLD, &myid);
+  MPI_Comm_size(MPI_COMM_WORLD, &size);
 #endif
 
   if (argc == 1) // no arguments
@@ -35,6 +37,13 @@ int main(int argc, char *argv[])
     cout << "****************************\n";
   }
 #endif
+
+  if (size > 1 && myid == 0)
+  {
+    cout << "****************************\n";
+    cout << "PARALLEL: size " << size << "\n";
+    cout << "****************************\n";
+  }
 
   try
   {

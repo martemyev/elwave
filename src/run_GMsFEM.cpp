@@ -77,18 +77,30 @@ static void time_step(const SparseMatrix &M, const SparseMatrix &S,
 
 
 static void par_time_step(HypreParMatrix &M, HypreParMatrix &S,
-                          HypreParVector &b, double timeval, double dt,
-                          Solver &solver, HypreParVector &U_0,
-                          HypreParVector &U_1, HypreParVector &U_2)
+                          const Vector &b, double timeval, double dt,
+                          Vector &U_0, Vector &U_1, Vector &U_2)
 {
-  HypreParVector y = U_1; y *= 2.0; y -= U_2;        // y = 2*u_1 - u_2
+  HypreSmoother M_prec;
+  CGSolver M_solver(M.GetComm());
 
-  HypreParVector z0 = U_0;                           // z0 = M * (2*u_1 - u_2)
+  M_prec.SetType(HypreSmoother::Jacobi);
+  M_solver.SetPreconditioner(M_prec);
+  M_solver.SetOperator(M);
+
+  M_solver.iterative_mode = false;
+  M_solver.SetRelTol(1e-9);
+  M_solver.SetAbsTol(0.0);
+  M_solver.SetMaxIter(100);
+  M_solver.SetPrintLevel(0);
+
+  Vector y = U_1; y *= 2.0; y -= U_2;        // y = 2*u_1 - u_2
+
+  Vector z0 = U_0;                           // z0 = M * (2*u_1 - u_2)
   M.Mult(y, z0);
 
-  HypreParVector z1 = U_0;                           // z1 = S * u_1
+  Vector z1 = U_0;                           // z1 = S * u_1
   S.Mult(U_1, z1);
-  HypreParVector z2 = b; z2 *= timeval; // z2 = timeval*source
+  Vector z2 = b; z2 *= timeval; // z2 = timeval*source
 
   // y = dt^2 * (S*u_1 - timeval*source), where it can be
   // y = dt^2 * (S*u_1 - ricker*pointforce) OR
@@ -96,14 +108,13 @@ static void par_time_step(HypreParMatrix &M, HypreParMatrix &S,
   y = z1; y -= z2; y *= dt*dt;
 
   // RHS = M*(2*u_1-u_2) - dt^2*(S*u_1-timeval*source)
-  HypreParVector RHS = z0; RHS -= y;
+  Vector RHS = z0; RHS -= y;
 
-  solver.Mult(RHS, U_0);
+  M_solver.Mult(RHS, U_0);
 
   U_2 = U_1;
   U_1 = U_0;
 }
-
 
 
 void ElasticWave::run_GMsFEM_serial() const
@@ -586,7 +597,7 @@ void ElasticWave::run_GMsFEM_serial() const
     visit_dc.SetCycle(0);
     visit_dc.SetTime(0.0);
     Vector u_tmp(u_fine_0.Size());
-    R_global_T->Mult(U_0, u_tmp);
+    R_global_T->Mult(U_0, u_tmp); // USE MultTranspose and DON'T USE R_global_T !!!!
     u_0.MakeRef(&fespace, u_tmp, 0);
     visit_dc.Save();
   }
@@ -619,7 +630,7 @@ void ElasticWave::run_GMsFEM_serial() const
       visit_dc.SetCycle(t_step);
       visit_dc.SetTime(t_step*param.dt);
       Vector u_tmp(u_fine_0.Size());
-      R_global_T->Mult(U_0, u_tmp);
+      R_global_T->Mult(U_0, u_tmp); // USE MultTranspose and DON'T USE R_global_T !!!!
       u_0.MakeRef(&fespace, u_tmp, 0);
       visit_dc.Save();
       timer.Stop();
@@ -629,7 +640,7 @@ void ElasticWave::run_GMsFEM_serial() const
 //    if (t_step % param.step_seis == 0) {
 //      StopWatch timer;
 //      timer.Start();
-//      R_global_T.Mult(U_0, u_0);
+//      R_global_T.Mult(U_0, u_0); // USE MultTranspose and DON'T USE R_global_T !!!!
 //      output_seismograms(param, *param.mesh, u_0, seisU);
 //      timer.Stop();
 //      time_of_seismograms += timer.UserTime();
@@ -672,8 +683,11 @@ void ElasticWave::run_GMsFEM_parallel() const
   ParFiniteElementSpace fespace(param.par_mesh, &fec, dim);
   cout << "done. Time = " << chrono.RealTime() << " sec" << endl;
 
-  if (myid == 0)
-    cout << "Number of unknowns: " << fespace.GlobalTrueVSize() << endl;
+  {
+    const HYPRE_Int size = fespace.GlobalTrueVSize();
+    if (myid == 0)
+      cout << "Number of unknowns: " << size << endl;
+  }
 
   CWConstCoefficient rho_coef(param.media.rho_array, false);
   CWConstCoefficient lambda_coef(param.media.lambda_array, false);
@@ -691,7 +705,7 @@ void ElasticWave::run_GMsFEM_parallel() const
      new DGElasticityIntegrator(lambda_coef, mu_coef,
                                 param.method.dg_sigma, param.method.dg_kappa));
   stif_fine.Assemble();
-
+  stif_fine.Finalize();
   HypreParMatrix *S_fine = stif_fine.ParallelAssemble();
   if (myid == 0)
     cout << "done. Time = " << chrono.RealTime() << " sec" << endl;
@@ -703,8 +717,19 @@ void ElasticWave::run_GMsFEM_parallel() const
   ParBilinearForm mass_fine(&fespace);
   mass_fine.AddDomainIntegrator(new VectorMassIntegrator(rho_coef));
   mass_fine.Assemble();
-
+  mass_fine.Finalize();
   HypreParMatrix *M_fine = mass_fine.ParallelAssemble();
+  if (myid == 0)
+    cout << "done. Time = " << chrono.RealTime() << " sec" << endl;
+
+  if (myid == 0)
+    cout << "System matrix..." << flush;
+  chrono.Clear();
+  ParBilinearForm sys_fine(&fespace);
+  sys_fine.AddDomainIntegrator(new VectorMassIntegrator(rho_coef));
+  sys_fine.Assemble();
+  sys_fine.Finalize();
+  HypreParMatrix *Sys_fine = sys_fine.ParallelAssemble();
   if (myid == 0)
     cout << "done. Time = " << chrono.RealTime() << " sec" << endl;
 
@@ -740,19 +765,295 @@ void ElasticWave::run_GMsFEM_parallel() const
     }
     else MFEM_ABORT("Unknown source type: " + string(param.source.type));
   }
+  HypreParVector *b = b_fine.ParallelAssemble();
   if (myid == 0)
     cout << "||b_h||_L2 = " << b_fine.Norml2() << endl
          << "done. Time = " << chrono.RealTime() << " sec" << endl;
-  HypreParVector b(&fespace);
-  b_fine.ParallelAssemble(b);
 
-
+/*
   HypreBoomerAMG amg(*M_fine);
   HyprePCG pcg(*M_fine);
   pcg.SetTol(1e-12);
   pcg.SetMaxIter(200);
   pcg.SetPrintLevel(2);
   pcg.SetPreconditioner(amg);
+*/
+
+
+  std::vector<int> n_fine_cell_per_coarse_x(param.method.gms_Nx);
+  fill_up_n_fine_cells_per_coarse(param.grid.nx, param.method.gms_Nx,
+                                  n_fine_cell_per_coarse_x);
+
+  std::vector<int> n_fine_cell_per_coarse_y(param.method.gms_Ny);
+  fill_up_n_fine_cells_per_coarse(param.grid.ny, param.method.gms_Ny,
+                                  n_fine_cell_per_coarse_y);
+
+  const double hx = param.grid.get_hx();
+  const double hy = param.grid.get_hy();
+
+  const int gen_edges = 1;
+
+  std::vector<std::vector<int> > local2global;
+  std::vector<DenseMatrix> R;
+
+  if (param.dimension == 2)
+  {
+    const int n_coarse_cells = param.method.gms_Nx * param.method.gms_Ny;
+    local2global.resize(n_coarse_cells);
+    R.resize(n_coarse_cells);
+
+    int offset_x, offset_y = 0;
+
+    for (int iy = 0; iy < param.method.gms_Ny; ++iy)
+    {
+      const int n_fine_y = n_fine_cell_per_coarse_y[iy];
+      const double SY = n_fine_y * hy;
+
+      offset_x = 0;
+      for (int ix = 0; ix < param.method.gms_Nx; ++ix)
+      {
+        const int n_fine_x = n_fine_cell_per_coarse_x[ix];
+        const double SX = n_fine_x * hx;
+        Mesh *ccell_fine_mesh =
+            new Mesh(n_fine_x, n_fine_y, Element::QUADRILATERAL, gen_edges, SX, SY);
+
+        double *local_rho    = new double[n_fine_x * n_fine_y];
+        double *local_lambda = new double[n_fine_x * n_fine_y];
+        double *local_mu     = new double[n_fine_x * n_fine_y];
+        for (int fiy = 0; fiy < n_fine_y; ++fiy)
+        {
+          for (int fix = 0; fix < n_fine_x; ++fix)
+          {
+            const int loc_cell = fiy*n_fine_x + fix;
+            const int glob_cell = (offset_y + fiy) * param.grid.nx +
+                                  (offset_x + fix);
+
+            local_rho[loc_cell]    = param.media.rho_array[glob_cell];
+            local_lambda[loc_cell] = param.media.lambda_array[glob_cell];
+            local_mu[loc_cell]     = param.media.mu_array[glob_cell];
+          }
+        }
+
+        CWConstCoefficient local_rho_coef(local_rho, true);
+        CWConstCoefficient local_lambda_coef(local_lambda, true);
+        CWConstCoefficient local_mu_coef(local_mu, true);
+
+        const int coarse_cell = iy*param.method.gms_Nx + ix;
+
+#ifdef BASIS_DG
+        compute_basis_DG(ccell_fine_mesh, param.method.gms_nb, param.method.gms_ni,
+                         local_one_over_rho_coef, local_one_over_K_coef,
+                         R[coarse_cell]);
+#else
+        compute_basis_CG(ccell_fine_mesh, param.method.gms_nb, param.method.gms_ni,
+                         local_rho_coef, local_lambda_coef, local_mu_coef,
+                         R[coarse_cell]);
+#endif
+
+        // initialize with all -1 to check that all values are defined later
+        local2global[coarse_cell].resize(R[coarse_cell].Height(), -1);
+        DG_FECollection DG_fec(param.method.order, param.dimension);
+        FiniteElementSpace DG_fespace(ccell_fine_mesh, &DG_fec, param.dimension);
+        Array<int> loc_dofs, glob_dofs;
+        for (int fiy = 0; fiy < n_fine_y; ++fiy)
+        {
+          for (int fix = 0; fix < n_fine_x; ++fix)
+          {
+            const int loc_cell = fiy*n_fine_x + fix;
+            const int glob_cell = (offset_y + fiy) * param.grid.nx +
+                                  (offset_x + fix);
+
+            DG_fespace.GetElementVDofs(loc_cell, loc_dofs);
+            fespace.GetElementVDofs(glob_cell, glob_dofs);
+            MFEM_VERIFY(loc_dofs.Size() == glob_dofs.Size(), "Dimensions mismatch");
+
+            for (int di = 0; di < loc_dofs.Size(); ++di)
+              local2global[coarse_cell][loc_dofs[di]] = glob_dofs[di];
+          }
+        }
+
+        // check that all values were defined
+        for (size_t ii = 0; ii < local2global[coarse_cell].size(); ++ii) {
+          MFEM_VERIFY(local2global[coarse_cell][ii] >= 0, "Some values of "
+                      "local2global vector were not defined");
+        }
+
+        delete ccell_fine_mesh;
+
+        offset_x += n_fine_x;
+      }
+      offset_y += n_fine_y;
+    }
+  }
+  else // 3D
+  {
+    std::vector<int> n_fine_cell_per_coarse_z(param.method.gms_Nz);
+    fill_up_n_fine_cells_per_coarse(param.grid.nz, param.method.gms_Nz,
+                                    n_fine_cell_per_coarse_z);
+
+    const double hz = param.grid.get_hz();
+
+    const int n_coarse_cells = param.method.gms_Nx * param.method.gms_Ny * param.method.gms_Nz;
+    local2global.resize(n_coarse_cells);
+    R.resize(n_coarse_cells);
+
+    int offset_x = 0, offset_y = 0, offset_z = 0;
+
+    for (int iz = 0; iz < param.method.gms_Nz; ++iz)
+    {
+      const int n_fine_z = n_fine_cell_per_coarse_z[iz];
+      const double SZ = n_fine_z * hz;
+      for (int iy = 0; iy < param.method.gms_Ny; ++iy)
+      {
+        const int n_fine_y = n_fine_cell_per_coarse_y[iy];
+        const double SY = n_fine_y * hy;
+        for (int ix = 0; ix < param.method.gms_Nx; ++ix)
+        {
+          const int n_fine_x = n_fine_cell_per_coarse_x[ix];
+          const double SX = n_fine_x * hx;
+          Mesh *ccell_fine_mesh =
+              new Mesh(n_fine_cell_per_coarse_x[ix],
+                       n_fine_cell_per_coarse_y[iy],
+                       n_fine_cell_per_coarse_z[iz],
+                       Element::HEXAHEDRON, gen_edges, SX, SY, SZ);
+
+          double *local_rho    = new double[n_fine_x * n_fine_y * n_fine_z];
+          double *local_lambda = new double[n_fine_x * n_fine_y * n_fine_z];
+          double *local_mu     = new double[n_fine_x * n_fine_y * n_fine_z];
+          for (int fiz = 0; fiz < n_fine_z; ++fiz)
+          {
+            for (int fiy = 0; fiy < n_fine_y; ++fiy)
+            {
+              for (int fix = 0; fix < n_fine_x; ++fix)
+              {
+                const int loc_cell = fiz*n_fine_x*n_fine_y + fiy*n_fine_x + fix;
+                const int glob_cell = (offset_z + fiz) * param.grid.nx * param.grid.ny +
+                                      (offset_y + fiy) * param.grid.nx +
+                                      (offset_x + fix);
+
+                local_rho[loc_cell]    = param.media.rho_array[glob_cell];
+                local_lambda[loc_cell] = param.media.lambda_array[glob_cell];
+                local_mu[loc_cell]     = param.media.mu_array[glob_cell];
+              }
+            }
+          }
+
+          CWConstCoefficient local_rho_coef(local_rho, true);
+          CWConstCoefficient local_lambda_coef(local_lambda, true);
+          CWConstCoefficient local_mu_coef(local_mu, true);
+
+          const int coarse_cell = iz*param.method.gms_Nx*param.method.gms_Ny +
+                                  iy*param.method.gms_Nx + ix;
+
+#ifdef BASIS_DG
+          compute_basis_DG(ccell_fine_mesh, param.method.gms_nb, param.method.gms_ni,
+                           local_one_over_rho_coef, local_one_over_K_coef,
+                           R[iz*param.method.gms_Nx*param.method.gms_Ny +
+                             iy*param.method.gms_Nx + ix]);
+#else
+          compute_basis_CG(ccell_fine_mesh, param.method.gms_nb, param.method.gms_ni,
+                           local_rho_coef, local_lambda_coef, local_mu_coef,
+                           R[coarse_cell]);
+#endif
+
+          // initialize with all -1 to check that all values are defined later
+          local2global[coarse_cell].resize(R[coarse_cell].Height(), -1);
+          DG_FECollection DG_fec(param.method.order, param.dimension);
+          FiniteElementSpace DG_fespace(ccell_fine_mesh, &DG_fec, param.dimension);
+          Array<int> loc_dofs, glob_dofs;
+          for (int fiz = 0; fiz < n_fine_z; ++fiz)
+          {
+            for (int fiy = 0; fiy < n_fine_y; ++fiy)
+            {
+              for (int fix = 0; fix < n_fine_x; ++fix)
+              {
+                const int loc_cell = fiz*n_fine_x*n_fine_y + fiy*n_fine_x + fix;
+                const int glob_cell = (offset_z + fiz) * param.grid.nx * param.grid.ny +
+                                      (offset_y + fiy) * param.grid.nx +
+                                      (offset_x + fix);
+
+                DG_fespace.GetElementVDofs(loc_cell, loc_dofs);
+                fespace.GetElementVDofs(glob_cell, glob_dofs);
+                MFEM_VERIFY(loc_dofs.Size() == glob_dofs.Size(), "Dimensions mismatch");
+
+                for (int di = 0; di < loc_dofs.Size(); ++di)
+                  local2global[coarse_cell][loc_dofs[di]] = glob_dofs[di];
+              }
+            }
+          }
+
+          // check that all values were defined
+          for (size_t ii = 0; ii < local2global[coarse_cell].size(); ++ii) {
+            MFEM_VERIFY(local2global[coarse_cell][ii] >= 0, "Some values of "
+                        "local2global vector were not defined");
+          }
+
+          delete ccell_fine_mesh;
+
+          offset_x += n_fine_x;
+        }
+        offset_y += n_fine_y;
+      }
+      offset_z += n_fine_z;
+    }
+  }
+
+  // global sparse R matrix
+  int n_rows = 0;
+  int n_cols = 0;
+  int n_non_zero = 0;
+  for (size_t i = 0; i < R.size(); ++i)
+  {
+    const int h = R[i].Height();
+    const int w = R[i].Width();
+    n_rows += w; // transpose
+    n_cols += h; // transpose
+    n_non_zero += h * w;
+  }
+  MFEM_VERIFY(n_cols == S_fine.Height(), "Dimensions mismatch");
+  int *Ri = new int[n_rows + 1];
+  int *Rj = new int[n_non_zero];
+  double *Rdata = new double[n_non_zero];
+
+  Ri[0] = 0;
+  int k = 0;
+  int p = 0;
+//  int offset = 0;
+  for (size_t r = 0; r < R.size(); ++r)
+  {
+    const int h = R[r].Height();
+    const int w = R[r].Width();
+    for (int i = 0; i < w; ++i)
+    {
+      Ri[k+1] = Ri[k] + h;
+      ++k;
+
+      for (int j = 0; j < h; ++j)
+      {
+        Rj[p] = local2global[r][j];
+        Rdata[p] = R[r](j, i);
+        ++p;
+      }
+    }
+//    offset += h;
+  }
+
+  HypreParMatrix R_global(Ri, Rj, Rdata, n_rows, n_cols);
+
+  HypreParMatrix *M_coarse = RAP(M_fine, R_global);
+  HypreParMatrix *S_coarse = RAP(S_fine, R_global);
+
+  Vector b_coarse(M_coarse->Height());
+  R_global.Mult(b_fine, b_coarse);
+
+
+
+
+
+
+
+
+
 
 
   const string method_name = "parGMsFEM_";
@@ -810,8 +1111,8 @@ void ElasticWave::run_GMsFEM_parallel() const
   for (int t_step = 1; t_step <= n_time_steps; ++t_step)
   {
     {
-      par_time_step(*M_fine, *S_fine, b, time_values[t_step-1],
-                    param.dt, pcg, U_0, U_1, U_2);
+      par_time_step(*M_fine, *S_fine, *b, time_values[t_step-1],
+                    param.dt, U_0, U_1, U_2);
     }
     {
 //      time_step(M_fine, S_fine, b_fine, time_values[t_step-1],
@@ -850,12 +1151,23 @@ void ElasticWave::run_GMsFEM_parallel() const
 
   time_loop_timer.Stop();
 
-  delete[] seisU;
-  delete[] seisV;
+  if (myid == 0)
+  {
+    delete[] seisU;
+    delete[] seisV;
+  }
 
-  cout << "Time loop is over\n\tpure time = " << time_loop_timer.UserTime()
-       << "\n\ttime of snapshots = " << time_of_snapshots
-       << "\n\ttime of seismograms = " << time_of_seismograms << endl;
+  if (myid == 0)
+  {
+    cout << "Time loop is over\n\tpure time = " << time_loop_timer.UserTime()
+         << "\n\ttime of snapshots = " << time_of_snapshots
+         << "\n\ttime of seismograms = " << time_of_seismograms << endl;
+  }
+
+  delete b;
+  delete Sys_fine;
+  delete M_fine;
+  delete S_fine;
 }
 #endif // MFEM_USE_MPI
 

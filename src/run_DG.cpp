@@ -16,9 +16,9 @@ void ElasticWave::run_DG()
 #ifdef MFEM_USE_MPI
   int size;
   MPI_Comm_size(MPI_COMM_WORLD, &size);
-//  if (size == 1)
-//    run_DG_serial();
-//  else
+  if (size == 1)
+    run_DG_serial();
+  else
     run_DG_parallel();
 #else
   run_DG_serial();
@@ -27,7 +27,7 @@ void ElasticWave::run_DG()
 
 
 static void par_time_step(HypreParMatrix &M, HypreParMatrix &S,
-                          const HypreParVector &b, double timeval, double dt,
+                          const Vector &b, double timeval, double dt,
                           Vector &U_0, Vector &U_1, Vector &U_2)
 {
   HypreSmoother M_prec;
@@ -325,9 +325,11 @@ void ElasticWave::run_DG_parallel()
   if (myid == 0)
     cout << "done. Time = " << chrono.RealTime() << " sec" << endl;
 
-  const HYPRE_Int size = fespace.GlobalTrueVSize();
-  if (myid == 0)
-    cout << "Number of unknowns: " << size << endl;
+  {
+    const HYPRE_Int size = fespace.GlobalTrueVSize();
+    if (myid == 0)
+      cout << "Number of unknowns: " << size << endl;
+  }
 
   CWConstCoefficient rho_coef(param.media.rho_array, false);
   CWConstCoefficient lambda_coef(param.media.lambda_array, false);
