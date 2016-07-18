@@ -188,8 +188,8 @@ public:
   const char *extra_string; ///< added to output files for distinguishing the
                             ///< results
 
-  bool coarse_matrices; ///< output coarse matrices (yes, no)
-  bool view_snapshot_space;
+  bool print_matrices; ///< output intermediate matrices (yes, no)
+  bool view_snapshot_space; ///< view some solutions via GLVis
   bool view_boundary_basis;
   bool view_interior_basis;
   bool view_dg_basis;

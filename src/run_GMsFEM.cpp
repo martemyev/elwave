@@ -472,7 +472,7 @@ void ElasticWave::run_GMsFEM_serial() const
   //SysCoarse += *M_coarse;
   GSSmoother PrecCoarse(SysCoarse);
 
-  if (param.output.coarse_matrices)
+  if (param.output.print_matrices)
   {
     {
       chrono.Clear();
@@ -550,13 +550,13 @@ void ElasticWave::run_GMsFEM_serial() const
   cout << "done. Time = " << chrono.RealTime() << " sec" << endl;
   chrono.Clear();
 
-  Vector U_0(M_coarse->Height()); // coarse scale pressure
+  Vector U_0(M_coarse->Height()); // coarse scale displacement
   U_0 = 0.0;
   Vector U_1 = U_0;
   Vector U_2 = U_0;
   GridFunction u_0(&fespace); // fine scale projected from coarse scale
 
-  GridFunction u_fine_0(&fespace); // fine scale pressure
+  GridFunction u_fine_0(&fespace); // fine scale displacement
   u_fine_0 = 0.0;
   Vector u_fine_1 = u_fine_0;
   Vector u_fine_2 = u_fine_0;
@@ -580,8 +580,8 @@ void ElasticWave::run_GMsFEM_serial() const
   const string pref_path = string(param.output.directory) + "/" + SNAPSHOTS_DIR;
   VisItDataCollection visit_dc(name.c_str(), param.mesh);
   visit_dc.SetPrefixPath(pref_path.c_str());
-  visit_dc.RegisterField("fine_pressure", &u_fine_0);
-  visit_dc.RegisterField("coarse_pressure", &u_0);
+  visit_dc.RegisterField("fine_displacement", &u_fine_0);
+  visit_dc.RegisterField("coarse_displacement", &u_0);
   {
     visit_dc.SetCycle(0);
     visit_dc.SetTime(0.0);
@@ -792,8 +792,8 @@ void ElasticWave::run_GMsFEM_parallel() const
   const string pref_path = string(param.output.directory) + "/" + SNAPSHOTS_DIR;
   VisItDataCollection visit_dc(name.c_str(), param.mesh);
   visit_dc.SetPrefixPath(pref_path.c_str());
-//  visit_dc.RegisterField("fine_pressure", &u_fine_0);
-  visit_dc.RegisterField("coarse_pressure", &u_0);
+//  visit_dc.RegisterField("fine_displacement", &u_fine_0);
+  visit_dc.RegisterField("coarse_displacement", &u_0);
   {
     visit_dc.SetCycle(0);
     visit_dc.SetTime(0.0);

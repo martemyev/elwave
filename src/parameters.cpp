@@ -303,7 +303,7 @@ void MethodParameters::check_parameters() const
 OutputParameters::OutputParameters()
   : directory("output")
   , extra_string("")
-  , coarse_matrices(false)
+  , print_matrices(false)
   , view_snapshot_space(false)
   , view_boundary_basis(false)
   , view_interior_basis(false)
@@ -314,9 +314,9 @@ void OutputParameters::AddOptions(OptionsParser& args)
 {
   args.AddOption(&directory, "-outdir", "--output-dir", "Directory to save results of computations");
   args.AddOption(&extra_string, "-extra", "--extra", "Extra string for naming output files");
-  args.AddOption(&coarse_matrices, "-outcmat", "--output-coarse-matrices",
-                 "-no-outcmat", "--no-output-coarse-matrices",
-                 "Output coarse scale matrices (may take long)");
+  args.AddOption(&print_matrices, "-outmat", "--output-matrices",
+                 "-no-outmat", "--no-output-matrices",
+                 "Output (print to file) some intermediate matrices (may take long)");
   args.AddOption(&view_snapshot_space, "-viewsnapspace", "--view-snapshot-space",
                  "-no-viewsnapspace", "--no-view-snapshot-space",
                  "Visualize solution of snapshot space (via GLVis)");

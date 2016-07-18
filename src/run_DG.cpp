@@ -9,8 +9,6 @@
 using namespace std;
 using namespace mfem;
 
-//#define OUTPUT_MASS_MATRIX
-
 
 
 void ElasticWave::run_DG()
@@ -102,9 +100,7 @@ void ElasticWave::run_DG_serial()
   const SparseMatrix& M = mass.SpMat();
   cout << "done. Time = " << chrono.RealTime() << " sec" << endl;
 
-  /*
-
-#if defined(OUTPUT_MASS_MATRIX)
+  if (param.output.print_matrices)
   {
     cout << "Output mass matrix..." << flush;
     ofstream mout("mass_mat.dat");
@@ -113,7 +109,6 @@ void ElasticWave::run_DG_serial()
     cout << "done. Time = " << chrono.RealTime() << " sec" << endl;
     chrono.Clear();
   }
-#endif
 
 //  cout << "Damp matrix..." << flush;
 //  BilinearForm dampM(&fespace);
@@ -292,8 +287,6 @@ void ElasticWave::run_DG_serial()
        << "\n\ttime of snapshots = " << time_of_snapshots
        << "\n\ttime of seismograms = " << time_of_seismograms << endl;
 
-  */
-
   delete fec;
 }
 
@@ -324,13 +317,9 @@ void ElasticWave::run_DG_parallel()
   if (myid == 0)
     cout << "Number of unknowns: " << size << endl;
 
-//  CWConstCoefficient rho_coef(param.media.rho_array, false);
-//  CWConstCoefficient lambda_coef(param.media.lambda_array, false);
-//  CWConstCoefficient mu_coef(param.media.mu_array, false);
-
-  ConstantCoefficient rho_coef(param.media.rho_array[0]);
-  ConstantCoefficient lambda_coef(param.media.lambda_array[0]);
-  ConstantCoefficient mu_coef(param.media.mu_array[0]);
+  CWConstCoefficient rho_coef(param.media.rho_array, false);
+  CWConstCoefficient lambda_coef(param.media.lambda_array, false);
+  CWConstCoefficient mu_coef(param.media.mu_array, false);
 
   if (myid == 0)
     cout << "Fine scale stif matrix..." << flush;
@@ -345,7 +334,6 @@ void ElasticWave::run_DG_parallel()
                                 param.method.dg_sigma, param.method.dg_kappa));
   stif_fine.Assemble();
   stif_fine.Finalize();
-
   HypreParMatrix *S_fine = stif_fine.ParallelAssemble();
   if (myid == 0)
     cout << "done. Time = " << chrono.RealTime() << " sec" << endl;
@@ -358,18 +346,25 @@ void ElasticWave::run_DG_parallel()
   mass_fine.AddDomainIntegrator(new VectorMassIntegrator(rho_coef));
   mass_fine.Assemble();
   mass_fine.Finalize();
-
   HypreParMatrix *M_fine = mass_fine.ParallelAssemble();
   if (myid == 0)
     cout << "done. Time = " << chrono.RealTime() << " sec" << endl;
 
-  /*
+  if (myid == 0)
+    cout << "System matrix..." << flush;
+  chrono.Clear();
+  ParBilinearForm sys_fine(&fespace);
+  sys_fine.AddDomainIntegrator(new VectorMassIntegrator(rho_coef));
+  sys_fine.Assemble();
+  sys_fine.Finalize();
+  HypreParMatrix *Sys_fine = sys_fine.ParallelAssemble();
+  if (myid == 0)
+    cout << "done. Time = " << chrono.RealTime() << " sec" << endl;
 
   //HypreParMatrix SysFine((hypre_ParCSRMatrix*)(*M_fine));
   //SysFine = 0.0;
   //SysFine += D;
   //SysFine += M_fine;
-
 
   if (myid == 0)
     cout << "Fine scale RHS vector... " << flush;
@@ -404,8 +399,8 @@ void ElasticWave::run_DG_parallel()
   b_fine.ParallelAssemble(b);
 
 
-  HypreBoomerAMG amg(*M_fine);
-  HyprePCG pcg(*M_fine);
+  HypreBoomerAMG amg(*Sys_fine);
+  HyprePCG pcg(*Sys_fine);
   pcg.SetTol(1e-12);
   pcg.SetMaxIter(200);
   pcg.SetPrintLevel(2);
@@ -449,8 +444,8 @@ void ElasticWave::run_DG_parallel()
   const string pref_path = string(param.output.directory) + "/" + SNAPSHOTS_DIR;
   VisItDataCollection visit_dc(name.c_str(), param.par_mesh);
   visit_dc.SetPrefixPath(pref_path.c_str());
-//  visit_dc.RegisterField("fine_pressure", &u_fine_0);
-  visit_dc.RegisterField("coarse_pressure", &u_0);
+//  visit_dc.RegisterField("fine_displacement", &u_fine_0);
+  visit_dc.RegisterField("coarse_displacement", &u_0);
   {
     visit_dc.SetCycle(0);
     visit_dc.SetTime(0.0);
@@ -490,7 +485,7 @@ void ElasticWave::run_DG_parallel()
       visit_dc.SetTime(t_step*param.dt);
 //      Vector u_tmp(u_fine_0.Size());
 //      R_global_T->Mult(U_0, u_tmp);
-//      u_0.MakeRef(&fespace, u_tmp, 0);
+      //u_0.MakeRef(&fespace, , 0);
       visit_dc.Save();
       timer.Stop();
       time_of_snapshots += timer.UserTime();
@@ -516,7 +511,6 @@ void ElasticWave::run_DG_parallel()
          << "\n\ttime of snapshots = " << time_of_snapshots
          << "\n\ttime of seismograms = " << time_of_seismograms << endl;
 
-  */
 }
 #endif // MFEM_USE_MPI
 
