@@ -670,8 +670,9 @@ void ElasticWave::run_GMsFEM_parallel() const
   MFEM_VERIFY(param.mesh, "The serial mesh is not initialized");
   MFEM_VERIFY(param.par_mesh, "The parallel mesh is not initialized");
 
-  int myid;
+  int myid, size;
   MPI_Comm_rank(MPI_COMM_WORLD, &myid);
+  MPI_Comm_size(MPI_COMM_WORLD, &size);
 
   StopWatch chrono;
   chrono.Start();
@@ -684,9 +685,9 @@ void ElasticWave::run_GMsFEM_parallel() const
   cout << "done. Time = " << chrono.RealTime() << " sec" << endl;
 
   {
-    const HYPRE_Int size = fespace.GlobalTrueVSize();
+    const HYPRE_Int n_dofs = fespace.GlobalTrueVSize();
     if (myid == 0)
-      cout << "Number of unknowns: " << size << endl;
+      cout << "Number of unknowns: " << n_dofs << endl;
   }
 
   CWConstCoefficient rho_coef(param.media.rho_array, false);
@@ -799,8 +800,19 @@ void ElasticWave::run_GMsFEM_parallel() const
   if (param.dimension == 2)
   {
     const int n_coarse_cells = param.method.gms_Nx * param.method.gms_Ny;
-    local2global.resize(n_coarse_cells);
-    R.resize(n_coarse_cells);
+
+    // number of coarse cells that all processes will have (at least)
+    const int min_n_cells = n_coarse_cells / size;
+    // number of coarse cells that should be distributed among some processes
+    const int extra_cells = n_coarse_cells % size;
+    // first and last (not including) indices of coarse element for the current
+    // 'myid' process
+    const int start = min_n_cells * myid + (extra_cells < myid ? extra_cells : myid);
+    const int end = start + min_n_cells + (extra_cells > myid);
+
+
+    local2global.resize(end - start);
+    R.resize(end - start);
 
     int offset_x, offset_y = 0;
 
@@ -812,6 +824,11 @@ void ElasticWave::run_GMsFEM_parallel() const
       offset_x = 0;
       for (int ix = 0; ix < param.method.gms_Nx; ++ix)
       {
+        const int global_coarse_cell = iy*param.method.gms_Nx + ix;
+        if (global_coarse_cell < start || global_coarse_cell >= end)
+          continue;
+        const int my_coarse_cell = global_coarse_cell - start;
+
         const int n_fine_x = n_fine_cell_per_coarse_x[ix];
         const double SX = n_fine_x * hx;
         Mesh *ccell_fine_mesh =
@@ -838,20 +855,18 @@ void ElasticWave::run_GMsFEM_parallel() const
         CWConstCoefficient local_lambda_coef(local_lambda, true);
         CWConstCoefficient local_mu_coef(local_mu, true);
 
-        const int coarse_cell = iy*param.method.gms_Nx + ix;
-
 #ifdef BASIS_DG
         compute_basis_DG(ccell_fine_mesh, param.method.gms_nb, param.method.gms_ni,
                          local_one_over_rho_coef, local_one_over_K_coef,
-                         R[coarse_cell]);
+                         R[my_coarse_cell]);
 #else
         compute_basis_CG(ccell_fine_mesh, param.method.gms_nb, param.method.gms_ni,
                          local_rho_coef, local_lambda_coef, local_mu_coef,
-                         R[coarse_cell]);
+                         R[my_coarse_cell]);
 #endif
 
         // initialize with all -1 to check that all values are defined later
-        local2global[coarse_cell].resize(R[coarse_cell].Height(), -1);
+        local2global[my_coarse_cell].resize(R[my_coarse_cell].Height(), -1);
         DG_FECollection DG_fec(param.method.order, param.dimension);
         FiniteElementSpace DG_fespace(ccell_fine_mesh, &DG_fec, param.dimension);
         Array<int> loc_dofs, glob_dofs;
@@ -868,13 +883,13 @@ void ElasticWave::run_GMsFEM_parallel() const
             MFEM_VERIFY(loc_dofs.Size() == glob_dofs.Size(), "Dimensions mismatch");
 
             for (int di = 0; di < loc_dofs.Size(); ++di)
-              local2global[coarse_cell][loc_dofs[di]] = glob_dofs[di];
+              local2global[my_coarse_cell][loc_dofs[di]] = glob_dofs[di];
           }
         }
 
         // check that all values were defined
-        for (size_t ii = 0; ii < local2global[coarse_cell].size(); ++ii) {
-          MFEM_VERIFY(local2global[coarse_cell][ii] >= 0, "Some values of "
+        for (size_t ii = 0; ii < local2global[my_coarse_cell].size(); ++ii) {
+          MFEM_VERIFY(local2global[my_coarse_cell][ii] >= 0, "Some values of "
                       "local2global vector were not defined");
         }
 
@@ -894,8 +909,19 @@ void ElasticWave::run_GMsFEM_parallel() const
     const double hz = param.grid.get_hz();
 
     const int n_coarse_cells = param.method.gms_Nx * param.method.gms_Ny * param.method.gms_Nz;
-    local2global.resize(n_coarse_cells);
-    R.resize(n_coarse_cells);
+
+    // number of coarse cells that all processes will have (at least)
+    const int min_n_cells = n_coarse_cells / size;
+    // number of coarse cells that should be distributed among some processes
+    const int extra_cells = n_coarse_cells % size;
+    // first and last (not including) indices of coarse element for the current
+    // 'myid' process
+    const int start = min_n_cells * myid + (extra_cells < myid ? extra_cells : myid);
+    const int end = start + min_n_cells + (extra_cells > myid);
+
+
+    local2global.resize(end - start);
+    R.resize(end - start);
 
     int offset_x = 0, offset_y = 0, offset_z = 0;
 
@@ -909,6 +935,12 @@ void ElasticWave::run_GMsFEM_parallel() const
         const double SY = n_fine_y * hy;
         for (int ix = 0; ix < param.method.gms_Nx; ++ix)
         {
+          const int global_coarse_cell = iz*param.method.gms_Nx*param.method.gms_Ny +
+                                         iy*param.method.gms_Nx + ix;
+          if (global_coarse_cell < start || global_coarse_cell >= end)
+            continue;
+          const int my_coarse_cell = global_coarse_cell - start;
+
           const int n_fine_x = n_fine_cell_per_coarse_x[ix];
           const double SX = n_fine_x * hx;
           Mesh *ccell_fine_mesh =
@@ -942,22 +974,18 @@ void ElasticWave::run_GMsFEM_parallel() const
           CWConstCoefficient local_lambda_coef(local_lambda, true);
           CWConstCoefficient local_mu_coef(local_mu, true);
 
-          const int coarse_cell = iz*param.method.gms_Nx*param.method.gms_Ny +
-                                  iy*param.method.gms_Nx + ix;
-
 #ifdef BASIS_DG
           compute_basis_DG(ccell_fine_mesh, param.method.gms_nb, param.method.gms_ni,
                            local_one_over_rho_coef, local_one_over_K_coef,
-                           R[iz*param.method.gms_Nx*param.method.gms_Ny +
-                             iy*param.method.gms_Nx + ix]);
+                           R[my_coarse_cell]);
 #else
           compute_basis_CG(ccell_fine_mesh, param.method.gms_nb, param.method.gms_ni,
                            local_rho_coef, local_lambda_coef, local_mu_coef,
-                           R[coarse_cell]);
+                           R[my_coarse_cell]);
 #endif
 
           // initialize with all -1 to check that all values are defined later
-          local2global[coarse_cell].resize(R[coarse_cell].Height(), -1);
+          local2global[my_coarse_cell].resize(R[my_coarse_cell].Height(), -1);
           DG_FECollection DG_fec(param.method.order, param.dimension);
           FiniteElementSpace DG_fespace(ccell_fine_mesh, &DG_fec, param.dimension);
           Array<int> loc_dofs, glob_dofs;
@@ -977,14 +1005,14 @@ void ElasticWave::run_GMsFEM_parallel() const
                 MFEM_VERIFY(loc_dofs.Size() == glob_dofs.Size(), "Dimensions mismatch");
 
                 for (int di = 0; di < loc_dofs.Size(); ++di)
-                  local2global[coarse_cell][loc_dofs[di]] = glob_dofs[di];
+                  local2global[my_coarse_cell][loc_dofs[di]] = glob_dofs[di];
               }
             }
           }
 
           // check that all values were defined
-          for (size_t ii = 0; ii < local2global[coarse_cell].size(); ++ii) {
-            MFEM_VERIFY(local2global[coarse_cell][ii] >= 0, "Some values of "
+          for (size_t ii = 0; ii < local2global[my_coarse_cell].size(); ++ii) {
+            MFEM_VERIFY(local2global[my_coarse_cell][ii] >= 0, "Some values of "
                         "local2global vector were not defined");
           }
 
@@ -997,6 +1025,8 @@ void ElasticWave::run_GMsFEM_parallel() const
       offset_z += n_fine_z;
     }
   }
+
+  /*
 
   // global sparse R matrix
   int n_rows = 0;
@@ -1046,6 +1076,7 @@ void ElasticWave::run_GMsFEM_parallel() const
   Vector b_coarse(M_coarse->Height());
   R_global.Mult(b_fine, b_coarse);
 
+*/
 
 
 
@@ -1053,8 +1084,7 @@ void ElasticWave::run_GMsFEM_parallel() const
 
 
 
-
-
+  /*
 
   const string method_name = "parGMsFEM_";
 
@@ -1123,7 +1153,8 @@ void ElasticWave::run_GMsFEM_parallel() const
     if (t_step % tenth == 0) {
       cout << "step " << t_step << " / " << n_time_steps
            << " ||U||_{L^2} = " << U_0.Norml2()
-           /*<< " ||u||_{L^2} = " << u_fine_0.Norml2()*/ << endl;
+           //<< " ||u||_{L^2} = " << u_fine_0.Norml2()
+           << endl;
     }
 
     if (t_step % param.step_snap == 0) {
@@ -1163,6 +1194,8 @@ void ElasticWave::run_GMsFEM_parallel() const
          << "\n\ttime of snapshots = " << time_of_snapshots
          << "\n\ttime of seismograms = " << time_of_seismograms << endl;
   }
+
+  */
 
   delete b;
   delete Sys_fine;
