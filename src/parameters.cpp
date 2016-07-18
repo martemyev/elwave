@@ -371,6 +371,11 @@ Parameters::~Parameters()
 
 void Parameters::init(int argc, char **argv)
 {
+  int myid = 0;
+#ifdef MFEM_USE_MPI
+  MPI_Comm_rank(MPI_COMM_WORLD, &myid);
+#endif
+
   OptionsParser args(argc, argv);
 
   args.AddOption(&dimension, "-d", "--dim", "Dimension of wave simulation (2 or 3)");
@@ -392,18 +397,14 @@ void Parameters::init(int argc, char **argv)
   args.Parse();
   if (!args.Good())
   {
-    args.PrintUsage(cout);
+    if (myid == 0)
+      args.PrintUsage(cout);
     throw 1;
   }
-  args.PrintOptions(cout);
+  if (myid == 0)
+    args.PrintOptions(cout);
 
   check_parameters();
-
-
-  int myid = 0;
-#ifdef MFEM_USE_MPI
-  MPI_Comm_rank(MPI_COMM_WORLD, &myid);
-#endif
 
   if (myid == 0)
     cout << "Mesh initialization..." << endl;

@@ -16,9 +16,9 @@ void ElasticWave::run_DG()
 #ifdef MFEM_USE_MPI
   int size;
   MPI_Comm_size(MPI_COMM_WORLD, &size);
-  if (size == 1)
-    run_DG_serial();
-  else
+//  if (size == 1)
+//    run_DG_serial();
+//  else
     run_DG_parallel();
 #else
   run_DG_serial();
@@ -27,18 +27,30 @@ void ElasticWave::run_DG()
 
 
 static void par_time_step(HypreParMatrix &M, HypreParMatrix &S,
-                          HypreParVector &b, double timeval, double dt,
-                          Solver &solver, HypreParVector &U_0,
-                          HypreParVector &U_1, HypreParVector &U_2)
+                          const HypreParVector &b, double timeval, double dt,
+                          Vector &U_0, Vector &U_1, Vector &U_2)
 {
-  HypreParVector y = U_1; y *= 2.0; y -= U_2;        // y = 2*u_1 - u_2
+  HypreSmoother M_prec;
+  CGSolver M_solver(M.GetComm());
 
-  HypreParVector z0 = U_0;                           // z0 = M * (2*u_1 - u_2)
+  M_prec.SetType(HypreSmoother::Jacobi);
+  M_solver.SetPreconditioner(M_prec);
+  M_solver.SetOperator(M);
+
+  M_solver.iterative_mode = false;
+  M_solver.SetRelTol(1e-9);
+  M_solver.SetAbsTol(0.0);
+  M_solver.SetMaxIter(100);
+  M_solver.SetPrintLevel(0);
+
+  Vector y = U_1; y *= 2.0; y -= U_2;        // y = 2*u_1 - u_2
+
+  Vector z0 = U_0;                           // z0 = M * (2*u_1 - u_2)
   M.Mult(y, z0);
 
-  HypreParVector z1 = U_0;                           // z1 = S * u_1
+  Vector z1 = U_0;                           // z1 = S * u_1
   S.Mult(U_1, z1);
-  HypreParVector z2 = b; z2 *= timeval; // z2 = timeval*source
+  Vector z2 = b; z2 *= timeval; // z2 = timeval*source
 
   // y = dt^2 * (S*u_1 - timeval*source), where it can be
   // y = dt^2 * (S*u_1 - ricker*pointforce) OR
@@ -46,9 +58,9 @@ static void par_time_step(HypreParMatrix &M, HypreParMatrix &S,
   y = z1; y -= z2; y *= dt*dt;
 
   // RHS = M*(2*u_1-u_2) - dt^2*(S*u_1-timeval*source)
-  HypreParVector RHS = z0; RHS -= y;
+  Vector RHS = z0; RHS -= y;
 
-  solver.Mult(RHS, U_0);
+  M_solver.Mult(RHS, U_0);
 
   U_2 = U_1;
   U_1 = U_0;
@@ -392,22 +404,21 @@ void ElasticWave::run_DG_parallel()
     }
     else MFEM_ABORT("Unknown source type: " + string(param.source.type));
   }
+  HypreParVector *b = b_fine.ParallelAssemble();
   if (myid == 0)
     cout << "||b_h||_L2 = " << b_fine.Norml2() << endl
          << "done. Time = " << chrono.RealTime() << " sec" << endl;
-  HypreParVector b(&fespace);
-  b_fine.ParallelAssemble(b);
 
-
+/*
   HypreBoomerAMG amg(*Sys_fine);
   HyprePCG pcg(*Sys_fine);
   pcg.SetTol(1e-12);
   pcg.SetMaxIter(200);
   pcg.SetPrintLevel(2);
   pcg.SetPreconditioner(amg);
+*/
 
-
-  const string method_name = "parGMsFEM_";
+  const string method_name = "parDG_";
 
   if (myid == 0)
     cout << "Open seismograms files..." << flush;
@@ -428,8 +439,9 @@ void ElasticWave::run_DG_parallel()
   const int n_time_steps = param.T / param.dt + 0.5; // nearest integer
   const int tenth = 0.1 * n_time_steps;
 
-  cout << "N time steps = " << n_time_steps
-       << "\nTime loop..." << endl;
+  if (myid == 0)
+    cout << "N time steps = " << n_time_steps
+         << "\nTime loop..." << endl;
 
   // the values of the time-dependent part of the source
   vector<double> time_values(n_time_steps);
@@ -449,6 +461,7 @@ void ElasticWave::run_DG_parallel()
   {
     visit_dc.SetCycle(0);
     visit_dc.SetTime(0.0);
+    u_0 = U_0;
 //    Vector u_tmp(u_fine_0.Size());
 //    R_global_T->Mult(U_0, u_tmp);
 //    u_0.MakeRef(&fespace, u_tmp, 0);
@@ -462,8 +475,8 @@ void ElasticWave::run_DG_parallel()
   for (int t_step = 1; t_step <= n_time_steps; ++t_step)
   {
     {
-      par_time_step(*M_fine, *S_fine, b, time_values[t_step-1],
-                    param.dt, pcg, U_0, U_1, U_2);
+      par_time_step(*M_fine, *S_fine, *b, time_values[t_step-1],
+                    param.dt, U_0, U_1, U_2);
     }
     {
 //      time_step(M_fine, S_fine, b_fine, time_values[t_step-1],
@@ -472,10 +485,16 @@ void ElasticWave::run_DG_parallel()
 
     // Compute and print the L^2 norm of the error
     if (t_step % tenth == 0) {
-      cout << "step " << t_step << " / " << n_time_steps
-           << " ||U||_{L^2} = " << U_0.Norml2()
-           //<< " ||u||_{L^2} = " << u_fine_0.Norml2()
-           << endl;
+      HypreParVector *u_tmp = u_0.GetTrueDofs();
+      double u_norm = U_0.Norml2();
+      if (myid == 0)
+      {
+        cout << "step " << t_step << " / " << n_time_steps
+             << " ||U||_{L^2} = " << u_norm
+             //<< " ||u||_{L^2} = " << u_fine_0.Norml2()
+             << endl;
+      }
+      delete u_tmp;
     }
 
     if (t_step % param.step_snap == 0) {
@@ -486,6 +505,7 @@ void ElasticWave::run_DG_parallel()
 //      Vector u_tmp(u_fine_0.Size());
 //      R_global_T->Mult(U_0, u_tmp);
       //u_0.MakeRef(&fespace, , 0);
+      u_0 = U_0;
       visit_dc.Save();
       timer.Stop();
       time_of_snapshots += timer.UserTime();
@@ -503,13 +523,24 @@ void ElasticWave::run_DG_parallel()
 
   time_loop_timer.Stop();
 
-  delete[] seisU;
-  delete[] seisV;
+  if (myid == 0)
+  {
+    delete[] seisU;
+    delete[] seisV;
+  }
 
   if (myid == 0)
+  {
     cout << "Time loop is over\n\tpure time = " << time_loop_timer.UserTime()
          << "\n\ttime of snapshots = " << time_of_snapshots
          << "\n\ttime of seismograms = " << time_of_seismograms << endl;
+  }
+
+  delete b;
+  delete Sys_fine;
+  delete M_fine;
+  delete S_fine;
+
 
 }
 #endif // MFEM_USE_MPI
