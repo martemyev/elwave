@@ -15,11 +15,11 @@ using namespace mfem;
 void ElasticWave::run_GMsFEM() const
 {
 #if defined(MFEM_USE_MPI)
-  int size;
-  MPI_Comm_size(MPI_COMM_WORLD, &size);
-  if (size == 1)
-    run_GMsFEM_serial();
-  else
+//  int size;
+//  MPI_Comm_size(MPI_COMM_WORLD, &size);
+//  if (size == 1)
+//    run_GMsFEM_serial();
+//  else
     run_GMsFEM_parallel();
 #else
   run_GMsFEM_serial();
@@ -1070,14 +1070,11 @@ void ElasticWave::run_GMsFEM_parallel() const
   MPI_Allreduce(&my_nrows, &glob_nrows, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
   MPI_Allreduce(&my_ncols, &glob_ncols, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
 
-  out << "my_nrows " << my_nrows << " my_ncols " << my_ncols << endl;
+  out << "\nmy_nrows " << my_nrows << " my_ncols " << my_ncols << endl;
   out << "glob_nrows " << glob_nrows << " glob_ncols " << glob_ncols << endl;
-
-  SparseMatrix myR(Ri, Rj, Rdata, my_nrows, glob_ncols);
 
   // if HYPRE_NO_GLOBAL_PARTITION is ON (it's default)
   int Rcols[] = { 0, glob_ncols };
-  int myRrows[2];
 
   int *Rrows = new int[size + 1];
   const int tag = 1;
@@ -1100,21 +1097,12 @@ void ElasticWave::run_GMsFEM_parallel() const
   }
   MPI_Bcast(Rrows, size + 1, MPI_INT, 0, MPI_COMM_WORLD);
 
-  out << "Rrows: ";
+  out << "\nRrows: ";
   for (int i = 0; i < size + 1; ++i)
     out << Rrows[i] << " ";
   out << endl;
 
-  myRrows[0] = Rrows[myid];
-  myRrows[1] = Rrows[myid + 1];
-
-//  int *Rcols = new int[size];
-//  for (int i = 0; i < size; ++i)
-//     Rcols[i] = 0;
-
-//  HypreParMatrix(MPI_Comm comm, int nrows, HYPRE_Int glob_nrows,
-//                 HYPRE_Int glob_ncols, int *I, HYPRE_Int *J,
-//                 double *data, HYPRE_Int *rows, HYPRE_Int *cols);
+  int myRrows[] = { Rrows[myid], Rrows[myid + 1] };
 
   /** Creates a general parallel matrix from a local CSR matrix on each
       processor described by the I, J and data arrays. The local matrix should
@@ -1122,16 +1110,32 @@ void ElasticWave::run_GMsFEM_parallel() const
       contains copies of all input arrays (so they can be deleted). */
   HypreParMatrix R_global(MPI_COMM_WORLD, my_nrows, glob_nrows, glob_ncols,
                           Ri, Rj, Rdata, myRrows, Rcols);
+  HypreParMatrix *R_global_T = R_global.Transpose();
 
-  //delete[] Rcols;
-  delete[] Rrows;
-  //delete[] Rdata;
-  //delete[] Rj;
-  //delete[] Ri;
+  if (param.output.print_matrices)
+  {
+    {
+      const string fname = string(param.output.directory) + "/r_global_par.dat";
+      ofstream out(fname.c_str());
+      MFEM_VERIFY(out, "Cannot open file " << fname);
+      R_global.PrintMatlab(out);
+    }
+    {
+      const string fname = string(param.output.directory) + "/s_fine_par.dat";
+      ofstream out(fname.c_str());
+      MFEM_VERIFY(out, "Cannot open file " << fname);
+      S_fine->PrintMatlab(out);
+    }
+  }
+
+//  delete[] Rrows;
+//  delete[] Rdata;
+//  delete[] Rj;
+//  delete[] Ri;
 
 
-  HypreParMatrix *M_coarse = NULL; //RAP(M_fine, &R_global);
-  HypreParMatrix *S_coarse = RAP(S_fine, &R_global);
+  HypreParMatrix *M_coarse = NULL; //RAP(M_fine, R_global_T);
+  HypreParMatrix *S_coarse = RAP(S_fine, R_global_T);
 
   //Vector b_coarse(M_coarse->Height());
   //R_global.Mult(b_fine, b_coarse);
