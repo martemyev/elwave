@@ -49,7 +49,7 @@ private:
    */
   void run_GMsFEM() const;
 
-  void compute_basis_CG(mfem::Mesh *fine_mesh, int n_boundary_bf, int n_interior_bf,
+  void compute_basis_CG(std::ostream &out, mfem::Mesh *fine_mesh, int n_boundary_bf, int n_interior_bf,
                         mfem::Coefficient &rho_coef, mfem::Coefficient &lambda_coef,
                         mfem::Coefficient &mu_coef, mfem::DenseMatrix &R) const;
 

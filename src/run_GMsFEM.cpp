@@ -274,7 +274,7 @@ void ElasticWave::run_GMsFEM_serial() const
                          local_one_over_rho_coef, local_one_over_K_coef,
                          R[coarse_cell]);
 #else
-        compute_basis_CG(ccell_fine_mesh, param.method.gms_nb, param.method.gms_ni,
+        compute_basis_CG(cout, ccell_fine_mesh, param.method.gms_nb, param.method.gms_ni,
                          local_rho_coef, local_lambda_coef, local_mu_coef,
                          R[coarse_cell]);
 #endif
@@ -380,7 +380,7 @@ void ElasticWave::run_GMsFEM_serial() const
                            R[iz*param.method.gms_Nx*param.method.gms_Ny +
                              iy*param.method.gms_Nx + ix]);
 #else
-          compute_basis_CG(ccell_fine_mesh, param.method.gms_nb, param.method.gms_ni,
+          compute_basis_CG(cout, ccell_fine_mesh, param.method.gms_nb, param.method.gms_ni,
                            local_rho_coef, local_lambda_coef, local_mu_coef,
                            R[coarse_cell]);
 #endif
@@ -674,28 +674,29 @@ void ElasticWave::run_GMsFEM_parallel() const
   MPI_Comm_rank(MPI_COMM_WORLD, &myid);
   MPI_Comm_size(MPI_COMM_WORLD, &size);
 
+  string fileout = "outputlog." + d2s(myid);
+  ofstream out(fileout.c_str());
+  MFEM_VERIFY(out, "Cannot open file " << fileout);
+
   StopWatch chrono;
   chrono.Start();
 
   const int dim = param.dimension;
 
-  cout << "FE space generation..." << flush;
+  out << "FE space generation..." << flush;
   DG_FECollection fec(param.method.order, dim);
   ParFiniteElementSpace fespace(param.par_mesh, &fec, dim);
-  cout << "done. Time = " << chrono.RealTime() << " sec" << endl;
+  FiniteElementSpace fespace_serial(param.mesh, &fec, dim);
+  out << "done. Time = " << chrono.RealTime() << " sec" << endl;
 
-  {
-    const HYPRE_Int n_dofs = fespace.GlobalTrueVSize();
-    if (myid == 0)
-      cout << "Number of unknowns: " << n_dofs << endl;
-  }
+  const HYPRE_Int n_dofs = fespace.GlobalTrueVSize();
+  out << "Number of unknowns: " << n_dofs << endl;
 
   CWConstCoefficient rho_coef(param.media.rho_array, false);
   CWConstCoefficient lambda_coef(param.media.lambda_array, false);
   CWConstCoefficient mu_coef(param.media.mu_array, false);
 
-  if (myid == 0)
-    cout << "Fine scale stif matrix..." << flush;
+  out << "Fine scale stif matrix..." << flush;
   chrono.Clear();
   ParBilinearForm stif_fine(&fespace);
   stif_fine.AddDomainIntegrator(new ElasticityIntegrator(lambda_coef, mu_coef));
@@ -708,31 +709,26 @@ void ElasticWave::run_GMsFEM_parallel() const
   stif_fine.Assemble();
   stif_fine.Finalize();
   HypreParMatrix *S_fine = stif_fine.ParallelAssemble();
-  if (myid == 0)
-    cout << "done. Time = " << chrono.RealTime() << " sec" << endl;
+  out << "done. Time = " << chrono.RealTime() << " sec" << endl;
 
 
-  if (myid == 0)
-    cout << "Fine scale mass matrix..." << flush;
+  out << "Fine scale mass matrix..." << flush;
   chrono.Clear();
   ParBilinearForm mass_fine(&fespace);
   mass_fine.AddDomainIntegrator(new VectorMassIntegrator(rho_coef));
   mass_fine.Assemble();
   mass_fine.Finalize();
   HypreParMatrix *M_fine = mass_fine.ParallelAssemble();
-  if (myid == 0)
-    cout << "done. Time = " << chrono.RealTime() << " sec" << endl;
+  out << "done. Time = " << chrono.RealTime() << " sec" << endl;
 
-  if (myid == 0)
-    cout << "System matrix..." << flush;
+  out << "System matrix..." << flush;
   chrono.Clear();
   ParBilinearForm sys_fine(&fespace);
   sys_fine.AddDomainIntegrator(new VectorMassIntegrator(rho_coef));
   sys_fine.Assemble();
   sys_fine.Finalize();
   HypreParMatrix *Sys_fine = sys_fine.ParallelAssemble();
-  if (myid == 0)
-    cout << "done. Time = " << chrono.RealTime() << " sec" << endl;
+  out << "done. Time = " << chrono.RealTime() << " sec" << endl;
 
   //HypreParMatrix SysFine((hypre_ParCSRMatrix*)(*M_fine));
   //SysFine = 0.0;
@@ -740,8 +736,7 @@ void ElasticWave::run_GMsFEM_parallel() const
   //SysFine += M_fine;
 
 
-  if (myid == 0)
-    cout << "Fine scale RHS vector... " << flush;
+  out << "Fine scale RHS vector... " << flush;
   chrono.Clear();
   ParLinearForm b_fine(&fespace);
   if (param.source.plane_wave)
@@ -767,9 +762,8 @@ void ElasticWave::run_GMsFEM_parallel() const
     else MFEM_ABORT("Unknown source type: " + string(param.source.type));
   }
   HypreParVector *b = b_fine.ParallelAssemble();
-  if (myid == 0)
-    cout << "||b_h||_L2 = " << b_fine.Norml2() << endl
-         << "done. Time = " << chrono.RealTime() << " sec" << endl;
+  out << "||b_h||_L2 = " << b_fine.Norml2() << endl
+      << "done. Time = " << chrono.RealTime() << " sec" << endl;
 
 /*
   HypreBoomerAMG amg(*M_fine);
@@ -810,6 +804,7 @@ void ElasticWave::run_GMsFEM_parallel() const
     const int start = min_n_cells * myid + (extra_cells < myid ? extra_cells : myid);
     const int end = start + min_n_cells + (extra_cells > myid);
 
+    out << "coarse cells: start " << start << " end " << end << endl;
 
     local2global.resize(end - start);
     R.resize(end - start);
@@ -828,6 +823,8 @@ void ElasticWave::run_GMsFEM_parallel() const
         if (global_coarse_cell < start || global_coarse_cell >= end)
           continue;
         const int my_coarse_cell = global_coarse_cell - start;
+        out << "\nglobal_coarse_cell " << global_coarse_cell
+            << " my_coarse_cell " << my_coarse_cell << endl;
 
         const int n_fine_x = n_fine_cell_per_coarse_x[ix];
         const double SX = n_fine_x * hx;
@@ -860,7 +857,7 @@ void ElasticWave::run_GMsFEM_parallel() const
                          local_one_over_rho_coef, local_one_over_K_coef,
                          R[my_coarse_cell]);
 #else
-        compute_basis_CG(ccell_fine_mesh, param.method.gms_nb, param.method.gms_ni,
+        compute_basis_CG(out, ccell_fine_mesh, param.method.gms_nb, param.method.gms_ni,
                          local_rho_coef, local_lambda_coef, local_mu_coef,
                          R[my_coarse_cell]);
 #endif
@@ -879,7 +876,7 @@ void ElasticWave::run_GMsFEM_parallel() const
                                   (offset_x + fix);
 
             DG_fespace.GetElementVDofs(loc_cell, loc_dofs);
-            fespace.GetElementVDofs(glob_cell, glob_dofs);
+            fespace_serial.GetElementVDofs(glob_cell, glob_dofs);
             MFEM_VERIFY(loc_dofs.Size() == glob_dofs.Size(), "Dimensions mismatch");
 
             for (int di = 0; di < loc_dofs.Size(); ++di)
@@ -919,6 +916,7 @@ void ElasticWave::run_GMsFEM_parallel() const
     const int start = min_n_cells * myid + (extra_cells < myid ? extra_cells : myid);
     const int end = start + min_n_cells + (extra_cells > myid);
 
+    out << "coarse cells: start " << start << " end " << end << endl;
 
     local2global.resize(end - start);
     R.resize(end - start);
@@ -940,6 +938,8 @@ void ElasticWave::run_GMsFEM_parallel() const
           if (global_coarse_cell < start || global_coarse_cell >= end)
             continue;
           const int my_coarse_cell = global_coarse_cell - start;
+          out << "\nglobal_coarse_cell " << global_coarse_cell
+              << " my_coarse_cell " << my_coarse_cell << endl;
 
           const int n_fine_x = n_fine_cell_per_coarse_x[ix];
           const double SX = n_fine_x * hx;
@@ -979,7 +979,7 @@ void ElasticWave::run_GMsFEM_parallel() const
                            local_one_over_rho_coef, local_one_over_K_coef,
                            R[my_coarse_cell]);
 #else
-          compute_basis_CG(ccell_fine_mesh, param.method.gms_nb, param.method.gms_ni,
+          compute_basis_CG(out, ccell_fine_mesh, param.method.gms_nb, param.method.gms_ni,
                            local_rho_coef, local_lambda_coef, local_mu_coef,
                            R[my_coarse_cell]);
 #endif
@@ -1001,7 +1001,7 @@ void ElasticWave::run_GMsFEM_parallel() const
                                       (offset_x + fix);
 
                 DG_fespace.GetElementVDofs(loc_cell, loc_dofs);
-                fespace.GetElementVDofs(glob_cell, glob_dofs);
+                fespace_serial.GetElementVDofs(glob_cell, glob_dofs);
                 MFEM_VERIFY(loc_dofs.Size() == glob_dofs.Size(), "Dimensions mismatch");
 
                 for (int di = 0; di < loc_dofs.Size(); ++di)
