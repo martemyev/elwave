@@ -1026,29 +1026,26 @@ void ElasticWave::run_GMsFEM_parallel() const
     }
   }
 
-  /*
-
-  // global sparse R matrix
-  int n_rows = 0;
-  int n_cols = 0;
-  int n_non_zero = 0;
+  // my portion of the global sparse R matrix
+  int my_nrows = 0;
+  int my_ncols = 0;
+  int my_nnonzero = 0;
   for (size_t i = 0; i < R.size(); ++i)
   {
     const int h = R[i].Height();
     const int w = R[i].Width();
-    n_rows += w; // transpose
-    n_cols += h; // transpose
-    n_non_zero += h * w;
+    my_nrows += w; // transpose
+    my_ncols += h; // transpose
+    my_nnonzero += h * w;
   }
-  MFEM_VERIFY(n_cols == S_fine.Height(), "Dimensions mismatch");
-  int *Ri = new int[n_rows + 1];
-  int *Rj = new int[n_non_zero];
-  double *Rdata = new double[n_non_zero];
+  //MFEM_VERIFY(n_cols == S_fine->BooleanMult(Height(), "Dimensions mismatch");
+  int *Ri = new int[my_nrows + 1];
+  int *Rj = new int[my_nnonzero];
+  double *Rdata = new double[my_nnonzero];
 
   Ri[0] = 0;
   int k = 0;
   int p = 0;
-//  int offset = 0;
   for (size_t r = 0; r < R.size(); ++r)
   {
     const int h = R[r].Height();
@@ -1065,18 +1062,81 @@ void ElasticWave::run_GMsFEM_parallel() const
         ++p;
       }
     }
-//    offset += h;
   }
 
-  HypreParMatrix R_global(Ri, Rj, Rdata, n_rows, n_cols);
+  int glob_nrows = 0;
+  int glob_ncols = 0;
 
-  HypreParMatrix *M_coarse = RAP(M_fine, R_global);
-  HypreParMatrix *S_coarse = RAP(S_fine, R_global);
+  MPI_Allreduce(&my_nrows, &glob_nrows, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+  MPI_Allreduce(&my_ncols, &glob_ncols, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
 
-  Vector b_coarse(M_coarse->Height());
-  R_global.Mult(b_fine, b_coarse);
+  out << "my_nrows " << my_nrows << " my_ncols " << my_ncols << endl;
+  out << "glob_nrows " << glob_nrows << " glob_ncols " << glob_ncols << endl;
 
-*/
+  SparseMatrix myR(Ri, Rj, Rdata, my_nrows, glob_ncols);
+
+  // if HYPRE_NO_GLOBAL_PARTITION is ON (it's default)
+  int Rcols[] = { 0, glob_ncols };
+  int myRrows[2];
+
+  int *Rrows = new int[size + 1];
+  const int tag = 1;
+  if (myid == 0)
+  {
+    Rrows[0] = 0;
+    Rrows[1] = my_nrows;
+    MPI_Status status;
+    for (int i = 1; i < size; ++i)
+    {
+      int nrows;
+      MPI_Recv(&nrows, 1, MPI_INT, i, tag, MPI_COMM_WORLD, &status);
+      if (i < size)
+        Rrows[i + 1] = Rrows[i] + nrows;
+    }
+  }
+  else
+  {
+    MPI_Send(&my_nrows, 1, MPI_INT, 0, tag, MPI_COMM_WORLD);
+  }
+  MPI_Bcast(Rrows, size + 1, MPI_INT, 0, MPI_COMM_WORLD);
+
+  out << "Rrows: ";
+  for (int i = 0; i < size + 1; ++i)
+    out << Rrows[i] << " ";
+  out << endl;
+
+  myRrows[0] = Rrows[myid];
+  myRrows[1] = Rrows[myid + 1];
+
+//  int *Rcols = new int[size];
+//  for (int i = 0; i < size; ++i)
+//     Rcols[i] = 0;
+
+//  HypreParMatrix(MPI_Comm comm, int nrows, HYPRE_Int glob_nrows,
+//                 HYPRE_Int glob_ncols, int *I, HYPRE_Int *J,
+//                 double *data, HYPRE_Int *rows, HYPRE_Int *cols);
+
+  /** Creates a general parallel matrix from a local CSR matrix on each
+      processor described by the I, J and data arrays. The local matrix should
+      be of size (local) nrows by (global) glob_ncols. The new parallel matrix
+      contains copies of all input arrays (so they can be deleted). */
+  HypreParMatrix R_global(MPI_COMM_WORLD, my_nrows, glob_nrows, glob_ncols,
+                          Ri, Rj, Rdata, myRrows, Rcols);
+
+  //delete[] Rcols;
+  delete[] Rrows;
+  //delete[] Rdata;
+  //delete[] Rj;
+  //delete[] Ri;
+
+
+  HypreParMatrix *M_coarse = NULL; //RAP(M_fine, &R_global);
+  HypreParMatrix *S_coarse = RAP(S_fine, &R_global);
+
+  //Vector b_coarse(M_coarse->Height());
+  //R_global.Mult(b_fine, b_coarse);
+
+
 
 
 
@@ -1196,6 +1256,9 @@ void ElasticWave::run_GMsFEM_parallel() const
   }
 
   */
+
+  delete S_coarse;
+  delete M_coarse;
 
   delete b;
   delete Sys_fine;
