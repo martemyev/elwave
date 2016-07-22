@@ -464,9 +464,6 @@ void ElasticWave::run_DG_parallel()
     visit_dc.SetCycle(0);
     visit_dc.SetTime(0.0);
     u_0 = U_0;
-//    Vector u_tmp(u_fine_0.Size());
-//    R_global_T->Mult(U_0, u_tmp);
-//    u_0.MakeRef(&fespace, u_tmp, 0);
     visit_dc.Save();
   }
 
@@ -504,23 +501,19 @@ void ElasticWave::run_DG_parallel()
       timer.Start();
       visit_dc.SetCycle(t_step);
       visit_dc.SetTime(t_step*param.dt);
-//      Vector u_tmp(u_fine_0.Size());
-//      R_global_T->Mult(U_0, u_tmp);
-      //u_0.MakeRef(&fespace, , 0);
       u_0 = U_0;
       visit_dc.Save();
       timer.Stop();
       time_of_snapshots += timer.UserTime();
     }
 
-//    if (t_step % param.step_seis == 0) {
-//      StopWatch timer;
-//      timer.Start();
-//      R_global_T.Mult(U_0, u_0);
-//      output_seismograms(param, *param.par_mesh, u_0, seisU);
-//      timer.Stop();
-//      time_of_seismograms += timer.UserTime();
-//    }
+    if (t_step % param.step_seis == 0) {
+      StopWatch timer;
+      timer.Start();
+      output_seismograms(param, *param.par_mesh, u_0, seisU);
+      timer.Stop();
+      time_of_seismograms += timer.UserTime();
+    }
   }
 
   time_loop_timer.Stop();

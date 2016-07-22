@@ -117,6 +117,7 @@ static void par_time_step(HypreParMatrix &M, HypreParMatrix &S,
 }
 
 
+
 void ElasticWave::run_GMsFEM_serial() const
 {
   MFEM_VERIFY(param.mesh, "The mesh is not initialized");
@@ -489,7 +490,7 @@ void ElasticWave::run_GMsFEM_serial() const
       chrono.Clear();
       cout << "Output R local matrices..." << flush;
       for (size_t r = 0; r < R.size(); ++r) {
-        const string fname = string(param.output.directory) + "/r" + d2s(r) + "_local_mat.dat";
+        const string fname = string(param.output.directory) + "/r" + d2s(r) + "_local_ser.dat";
         ofstream mout(fname.c_str());
         MFEM_VERIFY(mout, "Cannot open file " + fname);
         R[r].PrintMatlab(mout);
@@ -499,7 +500,7 @@ void ElasticWave::run_GMsFEM_serial() const
     {
       chrono.Clear();
       cout << "Output R_global matrix..." << flush;
-      const string fname = string(param.output.directory) + "/r_global_mat.dat";
+      const string fname = string(param.output.directory) + "/r_global_ser.dat";
       ofstream mout(fname.c_str());
       MFEM_VERIFY(mout, "Cannot open file " + fname);
       R_global.PrintMatlab(mout);
@@ -508,7 +509,7 @@ void ElasticWave::run_GMsFEM_serial() const
     {
       chrono.Clear();
       cout << "Output R_global_T matrix..." << flush;
-      const string fname = string(param.output.directory) + "/r_global_mat_t.dat";
+      const string fname = string(param.output.directory) + "/r_global_t_ser.dat";
       ofstream mout(fname.c_str());
       MFEM_VERIFY(mout, "Cannot open file " + fname);
       R_global_T->PrintMatlab(mout);
@@ -517,7 +518,7 @@ void ElasticWave::run_GMsFEM_serial() const
     {
       chrono.Clear();
       cout << "Output M_fine matrix..." << flush;
-      const string fname = string(param.output.directory) + "/m_fine_mat.dat";
+      const string fname = string(param.output.directory) + "/m_fine_ser.dat";
       ofstream mout(fname.c_str());
       MFEM_VERIFY(mout, "Cannot open file " + fname);
       M_fine.PrintMatlab(mout);
@@ -526,7 +527,7 @@ void ElasticWave::run_GMsFEM_serial() const
     {
       chrono.Clear();
       cout << "Output S_fine matrix..." << flush;
-      const string fname = string(param.output.directory) + "/s_fine_mat.dat";
+      const string fname = string(param.output.directory) + "/s_fine_ser.dat";
       ofstream mout(fname.c_str());
       MFEM_VERIFY(mout, "Cannot open file " + fname);
       S_fine.PrintMatlab(mout);
@@ -535,7 +536,7 @@ void ElasticWave::run_GMsFEM_serial() const
     {
       chrono.Clear();
       cout << "Output M_coarse matrix..." << flush;
-      const string fname = string(param.output.directory) + "/m_coarse_mat.dat";
+      const string fname = string(param.output.directory) + "/m_coarse_ser.dat";
       ofstream mout(fname.c_str());
       MFEM_VERIFY(mout, "Cannot open file " + fname);
       M_coarse->PrintMatlab(mout);
@@ -544,7 +545,7 @@ void ElasticWave::run_GMsFEM_serial() const
     {
       chrono.Clear();
       cout << "Output S_coarse matrix..." << flush;
-      const string fname = string(param.output.directory) + "/s_coarse_mat.dat";
+      const string fname = string(param.output.directory) + "/s_coarse_ser.dat";
       ofstream mout(fname.c_str());
       MFEM_VERIFY(mout, "Cannot open file " + fname);
       S_coarse->PrintMatlab(mout);
@@ -665,6 +666,32 @@ void ElasticWave::run_GMsFEM_serial() const
 
 
 #if defined(MFEM_USE_MPI)
+static void print_par_matrix_matlab(HypreParMatrix &A, const string &filename)
+{
+  int myid;
+  MPI_Comm_rank(MPI_COMM_WORLD, &myid);
+
+  // This call works because HypreParMatrix implicitly converts to hypre_ParCSRMatrix*
+  hypre_CSRMatrix* A_serial = hypre_ParCSRMatrixToCSRMatrixAll(A);
+
+  // This "views" the hypre_CSRMatrix as an mfem::SparseMatrix
+  mfem::SparseMatrix A_sparse(
+        hypre_CSRMatrixI(A_serial), hypre_CSRMatrixJ(A_serial), hypre_CSRMatrixData(A_serial),
+        hypre_CSRMatrixNumRows(A_serial), hypre_CSRMatrixNumCols(A_serial),
+        false, false, true);
+
+  // Write to file from root process
+  if (myid == 0)
+  {
+    ofstream out(filename.c_str());
+    MFEM_VERIFY(out, "Cannot open file " << filename);
+    A_sparse.PrintMatlab(out);
+  }
+
+  // Cleanup, since the hypre call creates a new matrix on each process
+  hypre_CSRMatrixDestroy(A_serial);
+}
+
 void ElasticWave::run_GMsFEM_parallel() const
 {
   MFEM_VERIFY(param.mesh, "The serial mesh is not initialized");
@@ -674,7 +701,7 @@ void ElasticWave::run_GMsFEM_parallel() const
   MPI_Comm_rank(MPI_COMM_WORLD, &myid);
   MPI_Comm_size(MPI_COMM_WORLD, &size);
 
-  string fileout = "outputlog." + d2s(myid);
+  string fileout = string(param.output.directory) + "/outputlog." + d2s(myid);
   ofstream out(fileout.c_str());
   MFEM_VERIFY(out, "Cannot open file " << fileout);
 
@@ -1038,31 +1065,6 @@ void ElasticWave::run_GMsFEM_parallel() const
     my_ncols += h; // transpose
     my_nnonzero += h * w;
   }
-  //MFEM_VERIFY(n_cols == S_fine->BooleanMult(Height(), "Dimensions mismatch");
-  int *Ri = new int[my_nrows + 1];
-  int *Rj = new int[my_nnonzero];
-  double *Rdata = new double[my_nnonzero];
-
-  Ri[0] = 0;
-  int k = 0;
-  int p = 0;
-  for (size_t r = 0; r < R.size(); ++r)
-  {
-    const int h = R[r].Height();
-    const int w = R[r].Width();
-    for (int i = 0; i < w; ++i)
-    {
-      Ri[k+1] = Ri[k] + h;
-      ++k;
-
-      for (int j = 0; j < h; ++j)
-      {
-        Rj[p] = local2global[r][j];
-        Rdata[p] = R[r](j, i);
-        ++p;
-      }
-    }
-  }
 
   int glob_nrows = 0;
   int glob_ncols = 0;
@@ -1072,9 +1074,6 @@ void ElasticWave::run_GMsFEM_parallel() const
 
   out << "\nmy_nrows " << my_nrows << " my_ncols " << my_ncols << endl;
   out << "glob_nrows " << glob_nrows << " glob_ncols " << glob_ncols << endl;
-
-  // if HYPRE_NO_GLOBAL_PARTITION is ON (it's default)
-  int Rcols[] = { 0, glob_ncols };
 
   int *Rrows = new int[size + 1];
   const int tag = 1;
@@ -1102,77 +1101,153 @@ void ElasticWave::run_GMsFEM_parallel() const
     out << Rrows[i] << " ";
   out << endl;
 
-  int myRrows[] = { Rrows[myid], Rrows[myid + 1] };
+  const int start_row = Rrows[myid];
+  const int end_row   = Rrows[myid + 1];
+  MFEM_VERIFY(my_nrows == end_row - start_row, "Number of rows mismatch");
+
+  const int *S_row_starts = S_fine->RowPart();
+  const int *S_col_starts = S_fine->ColPart();
+  const int *M_row_starts = M_fine->RowPart();
+  const int *M_col_starts = M_fine->ColPart();
+
+  out << "S_row_starts: " << S_row_starts[0] << " " << S_row_starts[1] << endl;
+  out << "S_col_starts: " << S_col_starts[0] << " " << S_col_starts[1] << endl;
+  out << "M_row_starts: " << M_row_starts[0] << " " << M_row_starts[1] << endl;
+  out << "M_col_starts: " << M_col_starts[0] << " " << M_col_starts[1] << endl;
+
+  int *Ri = new int[my_nrows + 1];
+  int *Rj = new int[my_nnonzero];
+  double *Rdata = new double[my_nnonzero];
+
+  {
+    Ri[0] = 0;
+    int k = 0;
+    int p = 0;
+    for (size_t r = 0; r < R.size(); ++r)
+    {
+      const int h = R[r].Height();
+      const int w = R[r].Width();
+      for (int i = 0; i < w; ++i)
+      {
+        Ri[k+1] = Ri[k] + h;
+        ++k;
+
+        for (int j = 0; j < h; ++j)
+        {
+          Rj[p] = local2global[r][j];
+          Rdata[p] = R[r](j, i);
+          ++p;
+        }
+      }
+    }
+  }
+
+  // if HYPRE_NO_GLOBAL_PARTITION is ON (it's default)
+//  int myRcols[] = { 0, glob_ncols };
+//  int myRcols[] = { S_row_starts[myid], S_row_starts[myid + 1] };
+  int myRrows[] = { start_row, end_row };
 
   /** Creates a general parallel matrix from a local CSR matrix on each
       processor described by the I, J and data arrays. The local matrix should
       be of size (local) nrows by (global) glob_ncols. The new parallel matrix
       contains copies of all input arrays (so they can be deleted). */
   HypreParMatrix R_global(MPI_COMM_WORLD, my_nrows, glob_nrows, glob_ncols,
-                          Ri, Rj, Rdata, myRrows, Rcols);
+                          Ri, Rj, Rdata, myRrows, S_fine->RowPart()); // myRcols);
+
   HypreParMatrix *R_global_T = R_global.Transpose();
+
+  delete[] Rrows;
+  delete[] Rdata;
+  delete[] Rj;
+  delete[] Ri;
+
+  HypreParMatrix *M_coarse = RAP(M_fine, R_global_T);
+  HypreParMatrix *S_coarse = RAP(S_fine, R_global_T);
 
   if (param.output.print_matrices)
   {
     {
-      const string fname = string(param.output.directory) + "/r_global_par.dat";
-      ofstream out(fname.c_str());
-      MFEM_VERIFY(out, "Cannot open file " << fname);
-      R_global.PrintMatlab(out);
+      chrono.Clear();
+      cout << "Output R local matrices..." << flush;
+      for (size_t r = 0; r < R.size(); ++r) {
+        const string fname = string(param.output.directory) + "/r" + d2s(r) + "_local_par.dat." + d2s(myid);
+        ofstream mout(fname.c_str());
+        MFEM_VERIFY(mout, "Cannot open file " + fname);
+        R[r].PrintMatlab(mout);
+      }
+      cout << "done. Time = " << chrono.RealTime() << " sec" << endl;
     }
     {
+      chrono.Clear();
+      cout << "Output R_global matrix..." << flush;
+      const string fname = string(param.output.directory) + "/r_global_par.dat";
+      print_par_matrix_matlab(R_global, fname);
+      cout << "done. Time = " << chrono.RealTime() << " sec" << endl;
+    }
+    {
+      chrono.Clear();
+      cout << "Output R_global_T matrix..." << flush;
+      const string fname = string(param.output.directory) + "/r_global_t_par.dat";
+      print_par_matrix_matlab(*R_global_T, fname);
+      cout << "done. Time = " << chrono.RealTime() << " sec" << endl;
+    }
+    {
+      chrono.Clear();
+      cout << "Output M_fine matrix..." << flush;
+      const string fname = string(param.output.directory) + "/m_fine_par.dat";
+      print_par_matrix_matlab(*M_fine, fname);
+      cout << "done. Time = " << chrono.RealTime() << " sec" << endl;
+    }
+    {
+      chrono.Clear();
+      cout << "Output S_fine matrix..." << flush;
       const string fname = string(param.output.directory) + "/s_fine_par.dat";
-      ofstream out(fname.c_str());
-      MFEM_VERIFY(out, "Cannot open file " << fname);
-      S_fine->PrintMatlab(out);
+      print_par_matrix_matlab(*S_fine, fname);
+      cout << "done. Time = " << chrono.RealTime() << " sec" << endl;
+    }
+    {
+      chrono.Clear();
+      cout << "Output M_coarse matrix..." << flush;
+      const string fname = string(param.output.directory) + "/m_coarse_par.dat";
+      print_par_matrix_matlab(*M_coarse, fname);
+      cout << "done. Time = " << chrono.RealTime() << " sec" << endl;
+    }
+    {
+      chrono.Clear();
+      cout << "Output S_coarse matrix..." << flush;
+      const string fname = string(param.output.directory) + "/s_coarse_par.dat";
+      print_par_matrix_matlab(*S_coarse, fname);
+      cout << "done. Time = " << chrono.RealTime() << " sec" << endl;
     }
   }
 
-//  delete[] Rrows;
-//  delete[] Rdata;
-//  delete[] Rj;
-//  delete[] Ri;
-
-
-  HypreParMatrix *M_coarse = NULL; //RAP(M_fine, R_global_T);
-  HypreParMatrix *S_coarse = RAP(S_fine, R_global_T);
-
-  //Vector b_coarse(M_coarse->Height());
-  //R_global.Mult(b_fine, b_coarse);
-
-
-
-
-
-
-
-
-
-  /*
+  HypreParVector b_coarse(*M_coarse);
+  R_global.Mult(*b, b_coarse);
 
   const string method_name = "parGMsFEM_";
 
-  if (myid == 0)
-    cout << "Open seismograms files..." << flush;
   ofstream *seisU; // for displacement
   ofstream *seisV; // for velocity
   if (myid == 0)
+  {
+    chrono.Clear();
+    cout << "Open seismograms files..." << flush;
     open_seismo_outs(seisU, seisV, param, method_name);
-  if (myid == 0)
     cout << "done. Time = " << chrono.RealTime() << " sec" << endl;
-  chrono.Clear();
+  }
 
-  HypreParVector U_0(*M_fine);
+  HypreParVector U_0(*M_coarse);
   U_0 = 0.0;
   HypreParVector U_1 = U_0;
   HypreParVector U_2 = U_0;
-  ParGridFunction u_0(&fespace, &U_0);
+  ParGridFunction u_0(&fespace);
 
   const int n_time_steps = param.T / param.dt + 0.5; // nearest integer
   const int tenth = 0.1 * n_time_steps;
 
-  cout << "N time steps = " << n_time_steps
-       << "\nTime loop..." << endl;
+  if (myid == 0)
+    cout << "N time steps = " << n_time_steps
+         << "\nTime loop..." << endl;
 
   // the values of the time-dependent part of the source
   vector<double> time_values(n_time_steps);
@@ -1192,9 +1267,9 @@ void ElasticWave::run_GMsFEM_parallel() const
   {
     visit_dc.SetCycle(0);
     visit_dc.SetTime(0.0);
-//    Vector u_tmp(u_fine_0.Size());
-//    R_global_T->Mult(U_0, u_tmp);
-//    u_0.MakeRef(&fespace, u_tmp, 0);
+    HypreParVector u_tmp(*M_fine);
+    R_global_T->Mult(U_0, u_tmp);
+    u_0.MakeRef(&fespace, u_tmp, 0);
     visit_dc.Save();
   }
 
@@ -1205,7 +1280,7 @@ void ElasticWave::run_GMsFEM_parallel() const
   for (int t_step = 1; t_step <= n_time_steps; ++t_step)
   {
     {
-      par_time_step(*M_fine, *S_fine, *b, time_values[t_step-1],
+      par_time_step(*M_coarse, *S_coarse, b_coarse, time_values[t_step-1],
                     param.dt, U_0, U_1, U_2);
     }
     {
@@ -1214,7 +1289,7 @@ void ElasticWave::run_GMsFEM_parallel() const
     }
 
     // Compute and print the L^2 norm of the error
-    if (t_step % tenth == 0) {
+    if (t_step % tenth == 0 && myid == 0) {
       cout << "step " << t_step << " / " << n_time_steps
            << " ||U||_{L^2} = " << U_0.Norml2()
            //<< " ||u||_{L^2} = " << u_fine_0.Norml2()
@@ -1226,9 +1301,9 @@ void ElasticWave::run_GMsFEM_parallel() const
       timer.Start();
       visit_dc.SetCycle(t_step);
       visit_dc.SetTime(t_step*param.dt);
-//      Vector u_tmp(u_fine_0.Size());
-//      R_global_T->Mult(U_0, u_tmp);
-//      u_0.MakeRef(&fespace, u_tmp, 0);
+      HypreParVector u_tmp(*M_fine);
+      R_global_T->Mult(U_0, u_tmp);
+      u_0.MakeRef(&fespace, u_tmp, 0);
       visit_dc.Save();
       timer.Stop();
       time_of_snapshots += timer.UserTime();
@@ -1259,7 +1334,7 @@ void ElasticWave::run_GMsFEM_parallel() const
          << "\n\ttime of seismograms = " << time_of_seismograms << endl;
   }
 
-  */
+  delete R_global_T;
 
   delete S_coarse;
   delete M_coarse;
