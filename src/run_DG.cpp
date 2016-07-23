@@ -28,7 +28,7 @@ void ElasticWave::run_DG()
 
 static void par_time_step(HypreParMatrix &M, HypreParMatrix &S,
                           const Vector &b, double timeval, double dt,
-                          Vector &U_0, Vector &U_1, Vector &U_2)
+                          Vector &U_0, Vector &U_1, Vector &U_2, Vector &V_1)
 {
   HypreSmoother M_prec;
   CGSolver M_solver(M.GetComm());
@@ -61,6 +61,11 @@ static void par_time_step(HypreParMatrix &M, HypreParMatrix &S,
   Vector RHS = z0; RHS -= y;
 
   M_solver.Mult(RHS, U_0);
+
+  // velocity: v = du/dt, we use the central difference here
+  V_1  = U_0;
+  V_1 -= U_2;
+  V_1 /= 2.0 * dt;
 
   U_2 = U_1;
   U_1 = U_0;
@@ -436,7 +441,9 @@ void ElasticWave::run_DG_parallel()
   U_0 = 0.0;
   HypreParVector U_1 = U_0;
   HypreParVector U_2 = U_0;
-  ParGridFunction u_0(&fespace, &U_0);
+  ParGridFunction u_0(&fespace); // output displacement
+  HypreParVector V_1 = U_0;
+  ParGridFunction v_1(&fespace); // output velocity
 
   const int n_time_steps = param.T / param.dt + 0.5; // nearest integer
   const int tenth = 0.1 * n_time_steps;
@@ -458,12 +465,13 @@ void ElasticWave::run_DG_parallel()
   const string pref_path = string(param.output.directory) + "/" + SNAPSHOTS_DIR;
   VisItDataCollection visit_dc(name.c_str(), param.par_mesh);
   visit_dc.SetPrefixPath(pref_path.c_str());
-//  visit_dc.RegisterField("fine_displacement", &u_fine_0);
-  visit_dc.RegisterField("coarse_displacement", &u_0);
+  visit_dc.RegisterField("displacement", &u_0);
+  visit_dc.RegisterField("velocity", &v_1);
   {
     visit_dc.SetCycle(0);
     visit_dc.SetTime(0.0);
     u_0 = U_0;
+    v_1 = V_1;
     visit_dc.Save();
   }
 
@@ -475,7 +483,7 @@ void ElasticWave::run_DG_parallel()
   {
     {
       par_time_step(*M_fine, *S_fine, *b, time_values[t_step-1],
-                    param.dt, U_0, U_1, U_2);
+                    param.dt, U_0, U_1, U_2, V_1);
     }
     {
 //      time_step(M_fine, S_fine, b_fine, time_values[t_step-1],
@@ -484,16 +492,12 @@ void ElasticWave::run_DG_parallel()
 
     // Compute and print the L^2 norm of the error
     if (t_step % tenth == 0) {
-      HypreParVector *u_tmp = u_0.GetTrueDofs();
-      double u_norm = U_0.Norml2();
+      double u_norm = GlobalLpNorm(2, U_0.Norml2(), MPI_COMM_WORLD);
       if (myid == 0)
       {
         cout << "step " << t_step << " / " << n_time_steps
-             << " ||U||_{L^2} = " << u_norm
-             //<< " ||u||_{L^2} = " << u_fine_0.Norml2()
-             << endl;
+             << " ||solution||_{L^2} = " << u_norm << endl;
       }
-      delete u_tmp;
     }
 
     if (t_step % param.step_snap == 0) {
@@ -502,18 +506,23 @@ void ElasticWave::run_DG_parallel()
       visit_dc.SetCycle(t_step);
       visit_dc.SetTime(t_step*param.dt);
       u_0 = U_0;
+      v_1 = V_1;
       visit_dc.Save();
       timer.Stop();
       time_of_snapshots += timer.UserTime();
     }
 
-    if (t_step % param.step_seis == 0) {
-      StopWatch timer;
-      timer.Start();
-      output_seismograms(param, *param.par_mesh, u_0, seisU);
-      timer.Stop();
-      time_of_seismograms += timer.UserTime();
-    }
+//    if (t_step % param.step_seis == 0) {
+//      StopWatch timer;
+//      timer.Start();
+//      if (myid == 0)
+//      {
+//        // Receive the ParGridFunction pieces from other processes
+//        output_seismograms(param, *param.par_mesh, u_0, v_1, seisU, seisV);
+//      }
+//      timer.Stop();
+//      time_of_seismograms += timer.UserTime();
+//    }
   }
 
   time_loop_timer.Stop();
