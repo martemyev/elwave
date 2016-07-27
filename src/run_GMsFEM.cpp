@@ -77,8 +77,8 @@ static void time_step(const SparseMatrix &M, const SparseMatrix &S,
 
 
 static void par_time_step(HypreParMatrix &M, HypreParMatrix &S,
-                          const Vector &b, double timeval, double dt,
-                          Vector &U_0, Vector &U_1, Vector &U_2)
+                          const HypreParVector &b, double timeval, double dt,
+                          HypreParVector &U_0, HypreParVector &U_1, HypreParVector &U_2, ostream &out)
 {
   HypreSmoother M_prec;
   CGSolver M_solver(M.GetComm());
@@ -93,14 +93,27 @@ static void par_time_step(HypreParMatrix &M, HypreParMatrix &S,
   M_solver.SetMaxIter(100);
   M_solver.SetPrintLevel(0);
 
-  Vector y = U_1; y *= 2.0; y -= U_2;        // y = 2*u_1 - u_2
+  { double norm = GlobalLpNorm(2, U_0.Norml2(), M.GetComm()); out << "||U_0|| = " << norm << endl; }
+  { double norm = GlobalLpNorm(2, U_1.Norml2(), M.GetComm()); out << "||U_1|| = " << norm << endl; }
+  { double norm = GlobalLpNorm(2, U_2.Norml2(), M.GetComm()); out << "||U_2|| = " << norm << endl; }
 
-  Vector z0 = U_0;                           // z0 = M * (2*u_1 - u_2)
+  HypreParVector y(U_1); y = U_1; y *= 2.0; y -= U_2;        // y = 2*u_1 - u_2
+
+  { double norm = GlobalLpNorm(2, y.Norml2(), M.GetComm()); out << "||y|| = " << norm << endl; }
+
+  HypreParVector z0(U_0); z0 = U_0;                           // z0 = M * (2*u_1 - u_2)
   M.Mult(y, z0);
 
-  Vector z1 = U_0;                           // z1 = S * u_1
+  { double norm = GlobalLpNorm(2, z0.Norml2(), M.GetComm()); out << "||z0|| = " << norm << endl; }
+
+  HypreParVector z1(U_0); z1 = U_0;                           // z1 = S * u_1
   S.Mult(U_1, z1);
-  Vector z2 = b; z2 *= timeval; // z2 = timeval*source
+
+  { double norm = GlobalLpNorm(2, z1.Norml2(), M.GetComm()); out << "||z1|| = " << norm << endl; }
+
+  HypreParVector z2(b); z2 = b; z2 *= timeval; // z2 = timeval*source
+
+  { double norm = GlobalLpNorm(2, z2.Norml2(), M.GetComm()); out << "||z2|| = " << norm << endl; }
 
   // y = dt^2 * (S*u_1 - timeval*source), where it can be
   // y = dt^2 * (S*u_1 - ricker*pointforce) OR
@@ -108,9 +121,69 @@ static void par_time_step(HypreParMatrix &M, HypreParMatrix &S,
   y = z1; y -= z2; y *= dt*dt;
 
   // RHS = M*(2*u_1-u_2) - dt^2*(S*u_1-timeval*source)
-  Vector RHS = z0; RHS -= y;
+  HypreParVector RHS(z0); RHS = z0; RHS -= y;
 
   M_solver.Mult(RHS, U_0);
+
+  { double norm = GlobalLpNorm(2, U_0.Norml2(), M.GetComm()); out << "||U_0|| = " << norm << endl; }
+
+  U_2 = U_1;
+  U_1 = U_0;
+}
+
+
+
+static void par_time_step2(HypreParMatrix &M, HypreParMatrix &S,
+                           const Vector &b, double timeval, double dt,
+                           Vector &U_0, Vector &U_1, Vector &U_2, ostream &out)
+{
+  HypreSmoother M_prec;
+  CGSolver M_solver(M.GetComm());
+
+  M_prec.SetType(HypreSmoother::Jacobi);
+  M_solver.SetPreconditioner(M_prec);
+  M_solver.SetOperator(M);
+
+  M_solver.iterative_mode = false;
+  M_solver.SetRelTol(1e-9);
+  M_solver.SetAbsTol(0.0);
+  M_solver.SetMaxIter(100);
+  M_solver.SetPrintLevel(0);
+
+  { double norm = GlobalLpNorm(2, U_0.Norml2(), M.GetComm()); out << "||U_0|| = " << norm << endl; }
+  { double norm = GlobalLpNorm(2, U_1.Norml2(), M.GetComm()); out << "||U_1|| = " << norm << endl; }
+  { double norm = GlobalLpNorm(2, U_2.Norml2(), M.GetComm()); out << "||U_2|| = " << norm << endl; }
+
+  Vector y = U_1; y *= 2.0; y -= U_2;        // y = 2*u_1 - u_2
+
+  { double norm = GlobalLpNorm(2, y.Norml2(), M.GetComm()); out << "||y|| = " << norm << endl; }
+
+  Vector z0 = U_0;                           // z0 = M * (2*u_1 - u_2)
+  M.Mult(y, z0);
+
+  { double norm = GlobalLpNorm(2, z0.Norml2(), M.GetComm()); out << "||z0|| = " << norm << endl; }
+
+  Vector z1 = U_0;                           // z1 = S * u_1
+  S.Mult(U_1, z1);
+
+  { double norm = GlobalLpNorm(2, z1.Norml2(), M.GetComm()); out << "||z1|| = " << norm << endl; }
+
+  Vector z2 = b; z2 *= timeval; // z2 = timeval*source
+
+  { double norm = GlobalLpNorm(2, z2.Norml2(), M.GetComm()); out << "||z2|| = " << norm << endl; }
+
+  // y = dt^2 * (S*u_1 - timeval*source), where it can be
+  // y = dt^2 * (S*u_1 - ricker*pointforce) OR
+  // y = dt^2 * (S*u_1 - gaussfirstderivative*momenttensor)
+  y = z1; y -= z2; y *= dt*dt;
+
+  // RHS = M*(2*u_1-u_2) - dt^2*(S*u_1-timeval*source)
+  Vector RHS(z0); RHS = z0; RHS -= y;
+
+  MPI_Barrier(MPI_COMM_WORLD);
+  M_solver.Mult(RHS, U_0);
+
+  { double norm = GlobalLpNorm(2, U_0.Norml2(), M.GetComm()); out << "||U_0|| = " << norm << endl; }
 
   U_2 = U_1;
   U_1 = U_0;
@@ -713,7 +786,7 @@ void ElasticWave::run_GMsFEM_parallel() const
   out << "FE space generation..." << flush;
   DG_FECollection fec(param.method.order, dim);
   ParFiniteElementSpace fespace(param.par_mesh, &fec, dim);
-  FiniteElementSpace fespace_serial(param.mesh, &fec, dim);
+//  FiniteElementSpace fespace_serial(param.mesh, &fec, dim);
   out << "done. Time = " << chrono.RealTime() << " sec" << endl;
 
   const HYPRE_Int n_dofs = fespace.GlobalTrueVSize();
@@ -800,6 +873,81 @@ void ElasticWave::run_GMsFEM_parallel() const
   pcg.SetPrintLevel(2);
   pcg.SetPreconditioner(amg);
 */
+
+  vector<int> my_cells_dofs;
+  my_cells_dofs.reserve(fespace.GetNE() * 10);
+  for (int el = 0; el < fespace.GetNE(); ++el)
+  {
+    const int cellID = fespace.GetAttribute(el) - 1;
+    Array<int> vdofs;
+    fespace.GetElementVDofs(el, vdofs);
+    my_cells_dofs.push_back(-cellID);
+    my_cells_dofs.push_back(vdofs.Size());
+    for (int d = 0; d < vdofs.Size(); ++d) {
+      const int globTDof = fespace.GetGlobalTDofNumber(vdofs[d]);
+      my_cells_dofs.push_back(globTDof);
+    }
+  }
+
+  out << "my_cells_dofs:\n";
+  for (size_t i = 0; i < my_cells_dofs.size(); ++i) {
+    if (my_cells_dofs[i] < 0)
+      out << endl;
+    out << my_cells_dofs[i] << " ";
+  }
+
+  if (myid == 0)
+  {
+    MPI_Status status;
+    for (int rank = 1; rank < size; ++rank)
+    {
+      int ncell_dofs;
+      MPI_Recv(&ncell_dofs, 1, MPI_INT, rank, 101, MPI_COMM_WORLD, &status);
+      vector<int> cell_dofs(ncell_dofs);
+      MPI_Recv(&cell_dofs[0], ncell_dofs, MPI_INT, rank, 102, MPI_COMM_WORLD, &status);
+      my_cells_dofs.reserve(my_cells_dofs.size() + ncell_dofs);
+      my_cells_dofs.insert(my_cells_dofs.end(), cell_dofs.begin(), cell_dofs.end());
+    }
+  }
+  else
+  {
+    const int my_ncell_dofs = my_cells_dofs.size();
+    MPI_Send(&my_ncell_dofs, 1, MPI_INT, 0, 101, MPI_COMM_WORLD);
+    MPI_Send(&my_cells_dofs[0], my_ncell_dofs, MPI_INT, 0, 102, MPI_COMM_WORLD);
+  }
+
+  int nglob_cell_dofs = my_cells_dofs.size();
+  MPI_Bcast(&nglob_cell_dofs, 1, MPI_INT, 0, MPI_COMM_WORLD);
+  if (myid != 0)
+    my_cells_dofs.resize(nglob_cell_dofs);
+  MPI_Bcast(&my_cells_dofs[0], nglob_cell_dofs, MPI_INT, 0, MPI_COMM_WORLD);
+
+  const int globNE = param.mesh->GetNE();
+  out << "globNE " << globNE << endl;
+  vector<vector<int> > map_cell_dofs(globNE);
+  for (int el = 0, k = 0; el < globNE; ++el)
+  {
+    MFEM_VERIFY(k < (int)my_cells_dofs.size(), "k is out of range");
+    int cellID = my_cells_dofs[k++];
+    MFEM_VERIFY(cellID <= 0, "Incorrect cellID");
+    cellID = -cellID;
+    const int ndofs = my_cells_dofs[k++];
+    if (!(cellID >= 0 && cellID < globNE))
+      out << "el " << el << " cellID " << cellID << endl;
+    MFEM_VERIFY(cellID >= 0 && cellID < globNE, "cellID is out of range");
+    MFEM_VERIFY(map_cell_dofs[cellID].empty(), "This cellID has been already added");
+    map_cell_dofs[cellID].resize(ndofs);
+    for (int i = 0; i < ndofs; ++i)
+      map_cell_dofs[cellID][i] = my_cells_dofs[k++];
+  }
+
+  out << "map_cell_dofs:\n";
+  for (size_t i = 0; i < map_cell_dofs.size(); ++i) {
+    out << i << " ";
+    for (size_t j = 0; j < map_cell_dofs[i].size(); ++j)
+      out << map_cell_dofs[i][j] << " ";
+    out << endl;
+  }
 
 
   std::vector<int> n_fine_cell_per_coarse_x(param.method.gms_Nx);
@@ -893,7 +1041,7 @@ void ElasticWave::run_GMsFEM_parallel() const
         local2global[my_coarse_cell].resize(R[my_coarse_cell].Height(), -1);
         DG_FECollection DG_fec(param.method.order, param.dimension);
         FiniteElementSpace DG_fespace(ccell_fine_mesh, &DG_fec, param.dimension);
-        Array<int> loc_dofs, glob_dofs;
+        Array<int> loc_dofs;
         for (int fiy = 0; fiy < n_fine_y; ++fiy)
         {
           for (int fix = 0; fix < n_fine_x; ++fix)
@@ -901,10 +1049,13 @@ void ElasticWave::run_GMsFEM_parallel() const
             const int loc_cell = fiy*n_fine_x + fix;
             const int glob_cell = (offset_y + fiy) * param.grid.nx +
                                   (offset_x + fix);
+            MFEM_VERIFY(glob_cell >= 0 && glob_cell < (int)map_cell_dofs.size(),
+                        "glob_cell is out of range");
 
             DG_fespace.GetElementVDofs(loc_cell, loc_dofs);
-            fespace_serial.GetElementVDofs(glob_cell, glob_dofs);
-            MFEM_VERIFY(loc_dofs.Size() == glob_dofs.Size(), "Dimensions mismatch");
+            //fespace_serial.GetElementVDofs(glob_cell, glob_dofs);
+            const vector<int> &glob_dofs = map_cell_dofs[glob_cell];
+            MFEM_VERIFY(loc_dofs.Size() == (int)glob_dofs.size(), "Dimensions mismatch");
 
             for (int di = 0; di < loc_dofs.Size(); ++di)
               local2global[my_coarse_cell][loc_dofs[di]] = glob_dofs[di];
@@ -1015,7 +1166,7 @@ void ElasticWave::run_GMsFEM_parallel() const
           local2global[my_coarse_cell].resize(R[my_coarse_cell].Height(), -1);
           DG_FECollection DG_fec(param.method.order, param.dimension);
           FiniteElementSpace DG_fespace(ccell_fine_mesh, &DG_fec, param.dimension);
-          Array<int> loc_dofs, glob_dofs;
+          Array<int> loc_dofs;
           for (int fiz = 0; fiz < n_fine_z; ++fiz)
           {
             for (int fiy = 0; fiy < n_fine_y; ++fiy)
@@ -1026,10 +1177,13 @@ void ElasticWave::run_GMsFEM_parallel() const
                 const int glob_cell = (offset_z + fiz) * param.grid.nx * param.grid.ny +
                                       (offset_y + fiy) * param.grid.nx +
                                       (offset_x + fix);
+                MFEM_VERIFY(glob_cell >= 0 && glob_cell < (int)map_cell_dofs.size(),
+                            "glob_cell is out of range");
 
                 DG_fespace.GetElementVDofs(loc_cell, loc_dofs);
-                fespace_serial.GetElementVDofs(glob_cell, glob_dofs);
-                MFEM_VERIFY(loc_dofs.Size() == glob_dofs.Size(), "Dimensions mismatch");
+                //fespace_serial.GetElementVDofs(glob_cell, glob_dofs);
+                const vector<int> &glob_dofs = map_cell_dofs[glob_cell];
+                MFEM_VERIFY(loc_dofs.Size() == (int)glob_dofs.size(), "Dimensions mismatch");
 
                 for (int di = 0; di < loc_dofs.Size(); ++di)
                   local2global[my_coarse_cell][loc_dofs[di]] = glob_dofs[di];
@@ -1076,23 +1230,21 @@ void ElasticWave::run_GMsFEM_parallel() const
   out << "glob_nrows " << glob_nrows << " glob_ncols " << glob_ncols << endl;
 
   int *Rrows = new int[size + 1];
-  const int tag = 1;
   if (myid == 0)
   {
     Rrows[0] = 0;
     Rrows[1] = my_nrows;
     MPI_Status status;
-    for (int i = 1; i < size; ++i)
+    for (int rank = 1; rank < size; ++rank)
     {
       int nrows;
-      MPI_Recv(&nrows, 1, MPI_INT, i, tag, MPI_COMM_WORLD, &status);
-      if (i < size)
-        Rrows[i + 1] = Rrows[i] + nrows;
+      MPI_Recv(&nrows, 1, MPI_INT, rank, 103, MPI_COMM_WORLD, &status);
+      Rrows[rank + 1] = Rrows[rank] + nrows;
     }
   }
   else
   {
-    MPI_Send(&my_nrows, 1, MPI_INT, 0, tag, MPI_COMM_WORLD);
+    MPI_Send(&my_nrows, 1, MPI_INT, 0, 103, MPI_COMM_WORLD);
   }
   MPI_Bcast(Rrows, size + 1, MPI_INT, 0, MPI_COMM_WORLD);
 
@@ -1224,6 +1376,8 @@ void ElasticWave::run_GMsFEM_parallel() const
   HypreParVector b_coarse(*M_coarse);
   R_global.Mult(*b, b_coarse);
 
+  { double norm = GlobalLpNorm(2, b_coarse.Norml2(), MPI_COMM_WORLD); out << "||b_H|| = " << norm << endl; }
+
   const string method_name = "parGMsFEM_";
 
   ofstream *seisU; // for displacement
@@ -1238,8 +1392,8 @@ void ElasticWave::run_GMsFEM_parallel() const
 
   HypreParVector U_0(*M_coarse);
   U_0 = 0.0;
-  HypreParVector U_1 = U_0;
-  HypreParVector U_2 = U_0;
+  HypreParVector U_1(U_0); U_1 = 0.0;
+  HypreParVector U_2(U_0); U_2 = 0.0;
   ParGridFunction u_0(&fespace);
 
   const int n_time_steps = param.T / param.dt + 0.5; // nearest integer
@@ -1260,16 +1414,17 @@ void ElasticWave::run_GMsFEM_parallel() const
 
   const string name = method_name + param.output.extra_string;
   const string pref_path = string(param.output.directory) + "/" + SNAPSHOTS_DIR;
-  VisItDataCollection visit_dc(name.c_str(), param.mesh);
+  VisItDataCollection visit_dc(name.c_str(), param.par_mesh);
   visit_dc.SetPrefixPath(pref_path.c_str());
 //  visit_dc.RegisterField("fine_displacement", &u_fine_0);
   visit_dc.RegisterField("coarse_displacement", &u_0);
   {
     visit_dc.SetCycle(0);
     visit_dc.SetTime(0.0);
-    HypreParVector u_tmp(*M_fine);
+    HypreParVector u_tmp(&fespace);
     R_global_T->Mult(U_0, u_tmp);
-    u_0.MakeRef(&fespace, u_tmp, 0);
+    //u_0.MakeRef(&fespace, u_tmp, 0);
+    u_0 = u_tmp;
     visit_dc.Save();
   }
 
@@ -1279,34 +1434,59 @@ void ElasticWave::run_GMsFEM_parallel() const
   double time_of_seismograms = 0.;
   for (int t_step = 1; t_step <= n_time_steps; ++t_step)
   {
+    double glob_norm = GlobalLpNorm(2, U_0.Norml2(), MPI_COMM_WORLD);
+    out << "t_step " << t_step << "||U|| = " << glob_norm << endl;
     {
-      par_time_step(*M_coarse, *S_coarse, b_coarse, time_values[t_step-1],
-                    param.dt, U_0, U_1, U_2);
+      par_time_step2(*M_coarse, *S_coarse, b_coarse, time_values[t_step-1],
+                     param.dt, U_0, U_1, U_2, out);
     }
-    {
+//    {
 //      time_step(M_fine, S_fine, b_fine, time_values[t_step-1],
 //                param.dt, SysFine, PrecFine, u_fine_0, u_fine_1, u_fine_2);
-    }
+//    }
 
-    // Compute and print the L^2 norm of the error
-    if (t_step % tenth == 0 && myid == 0) {
-      cout << "step " << t_step << " / " << n_time_steps
-           << " ||U||_{L^2} = " << U_0.Norml2()
-           //<< " ||u||_{L^2} = " << u_fine_0.Norml2()
-           << endl;
-    }
+//    // Compute and print the L^2 norm of the error
+//    if (t_step % tenth == 0 && myid == 0) {
+//      cout << "step " << t_step << " / " << n_time_steps
+//           << " ||U||_{L^2} = " << U_0.Norml2()
+//           //<< " ||u||_{L^2} = " << u_fine_0.Norml2()
+//           << endl;
+//    }
 
-    if (t_step % param.step_snap == 0) {
+
+    {
       StopWatch timer;
       timer.Start();
-      visit_dc.SetCycle(t_step);
-      visit_dc.SetTime(t_step*param.dt);
-      HypreParVector u_tmp(*M_fine);
+      HypreParVector u_tmp(&fespace);
       R_global_T->Mult(U_0, u_tmp);
-      u_0.MakeRef(&fespace, u_tmp, 0);
-      visit_dc.Save();
+      { double norm = GlobalLpNorm(2, u_tmp.Norml2(), MPI_COMM_WORLD); out << "||utmp_H|| = " << norm << endl; }
+      if (t_step % param.step_snap == 0) {
+        visit_dc.SetCycle(t_step);
+        visit_dc.SetTime(t_step*param.dt);
+        //u_0.MakeRef(&fespace, u_tmp, 0);
+        u_0 = u_tmp;
+        visit_dc.Save();
+      }
       timer.Stop();
       time_of_snapshots += timer.UserTime();
+    }
+
+    if (t_step % param.step_snap == 0)
+    {
+      ostringstream mesh_name, sol_name;
+      mesh_name << param.output.directory << "/" << param.output.extra_string << "_mesh." << setfill('0') << setw(6) << myid;
+      sol_name << param.output.directory << "/" << param.output.extra_string << "_sol_t" << t_step << "." << setfill('0') << setw(6) << myid;
+
+      ofstream mesh_ofs(mesh_name.str().c_str());
+      mesh_ofs.precision(8);
+      param.par_mesh->Print(mesh_ofs);
+
+      ofstream sol_ofs(sol_name.str().c_str());
+      sol_ofs.precision(8);
+      HypreParVector u_tmp(&fespace);
+      R_global_T->Mult(U_0, u_tmp);
+      ParGridFunction x(&fespace, &u_tmp);
+      x.Save(sol_ofs);
     }
 
 //    if (t_step % param.step_seis == 0) {
@@ -1326,14 +1506,14 @@ void ElasticWave::run_GMsFEM_parallel() const
     delete[] seisU;
     delete[] seisV;
   }
-
+/*
   if (myid == 0)
   {
     cout << "Time loop is over\n\tpure time = " << time_loop_timer.UserTime()
          << "\n\ttime of snapshots = " << time_of_snapshots
          << "\n\ttime of seismograms = " << time_of_seismograms << endl;
   }
-
+*/
   delete R_global_T;
 
   delete S_coarse;
