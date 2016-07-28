@@ -911,7 +911,7 @@ void ElasticWave::run_GMsFEM_parallel() const
   }
   else
   {
-    const int my_ncell_dofs = my_cells_dofs.size();
+    int my_ncell_dofs = my_cells_dofs.size();
     MPI_Send(&my_ncell_dofs, 1, MPI_INT, 0, 101, MPI_COMM_WORLD);
     MPI_Send(&my_cells_dofs[0], my_ncell_dofs, MPI_INT, 0, 102, MPI_COMM_WORLD);
   }
@@ -994,15 +994,19 @@ void ElasticWave::run_GMsFEM_parallel() const
       offset_x = 0;
       for (int ix = 0; ix < param.method.gms_Nx; ++ix)
       {
+        const int n_fine_x = n_fine_cell_per_coarse_x[ix];
+        const double SX = n_fine_x * hx;
+
         const int global_coarse_cell = iy*param.method.gms_Nx + ix;
         if (global_coarse_cell < start || global_coarse_cell >= end)
+        {
+          offset_x += n_fine_x;
           continue;
+        }
         const int my_coarse_cell = global_coarse_cell - start;
         out << "\nglobal_coarse_cell " << global_coarse_cell
             << " my_coarse_cell " << my_coarse_cell << endl;
 
-        const int n_fine_x = n_fine_cell_per_coarse_x[ix];
-        const double SX = n_fine_x * hx;
         Mesh *ccell_fine_mesh =
             new Mesh(n_fine_x, n_fine_y, Element::QUADRILATERAL, gen_edges, SX, SY);
 
