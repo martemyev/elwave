@@ -355,6 +355,7 @@ Parameters::Parameters()
   , par_mesh(nullptr)
   , T(1.0)
   , dt(1e-3)
+  , serial(true)
   , step_snap(1000)
   , step_seis(1)
   , receivers_file(DEFAULT_FILE_NAME)
@@ -388,6 +389,7 @@ void Parameters::init(int argc, char **argv)
 
   args.AddOption(&T, "-T", "--time-end", "Simulation time, s");
   args.AddOption(&dt, "-dt", "--time-step", "Time step, s");
+  args.AddOption(&serial, "-serial", "--serial", "-parallel", "--parallel", "Serial or parallel execution");
   args.AddOption(&step_snap, "-step-snap", "--step-snapshot", "Time step for outputting snapshots");
   args.AddOption(&step_seis, "-step-seis", "--step-seismogram", "Time step for outputting seismograms");
   args.AddOption(&receivers_file, "-rec-file", "--receivers-file", "File with information about receivers");
@@ -460,11 +462,13 @@ void Parameters::init(int argc, char **argv)
   for (int el = 0; el < mesh->GetNE(); ++el)
     mesh->GetElement(el)->SetAttribute(el+1);
 
-  par_mesh = new ParMesh(MPI_COMM_WORLD, *mesh);
+#ifdef MFEM_USE_MPI
+  if (!serial)
+    par_mesh = new ParMesh(MPI_COMM_WORLD, *mesh);
+#endif
 
   if (myid == 0)
     cout << "Mesh initialization is done" << endl;
-
 
   media.init(mesh->GetNE());
 

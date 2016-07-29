@@ -44,22 +44,46 @@ private:
    */
   void run_DG();
 
-  /**
-   * Generalized multiscale finite element method
-   */
-  void run_GMsFEM() const;
-
-  void compute_basis_CG(std::ostream &out, mfem::Mesh *fine_mesh, int n_boundary_bf, int n_interior_bf,
-                        mfem::Coefficient &rho_coef, mfem::Coefficient &lambda_coef,
-                        mfem::Coefficient &mu_coef, mfem::DenseMatrix &R) const;
-
   void run_SEM_SRM_serial();
   void run_DG_serial();
-  void run_GMsFEM_serial() const;
+
 #if defined(MFEM_USE_MPI)
   void run_SEM_SRM_parallel();
   void run_DG_parallel();
+
+  /**
+   * Generalized multiscale finite element method. It uses an MFEM eigensolver
+   * that works only in parallel setup.
+   */
+  void run_GMsFEM() const;
+
+  /**
+   * Still, GMsFEM can be run sequentially, even the MFEM parallel eigensolver
+   * (with MPI_COMM_SELF).
+   */
+  void run_GMsFEM_serial() const;
+
+  /**
+   * Parallel execution of the GMsFEM method.
+   */
   void run_GMsFEM_parallel() const;
+
+  /**
+   * Filling out the R matrices and the map between the local indices used for
+   * local R matrices computations and global indices to assemble a global R.
+   */
+  void compute_R_matrices(std::ostream &out,
+                          const std::vector<std::vector<int> > &map_cell_dofs,
+                          std::vector<std::vector<int> > &local2global,
+                          std::vector<mfem::DenseMatrix> &R) const;
+
+  /**
+   * Computation of the multiscale basis (each basis function is a column of the
+   * R matrix, which is a projection from fine scale to coarse scale spaces).
+   */
+  void compute_basis_CG(std::ostream &out, mfem::Mesh *fine_mesh, int n_boundary_bf, int n_interior_bf,
+                        mfem::Coefficient &rho_coef, mfem::Coefficient &lambda_coef,
+                        mfem::Coefficient &mu_coef, mfem::DenseMatrix &R) const;
 #endif
 };
 

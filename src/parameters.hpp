@@ -228,6 +228,8 @@ public:
   double T; ///< simulation time
   double dt; ///< time step
 
+  bool serial; ///< serial or parallel execution
+
   int step_snap; ///< time step for outputting snapshots (every *th time step)
   int step_seis; ///< time step for outputting seismograms (every *th time step)
   const char *receivers_file; ///< file describing the sets of receivers

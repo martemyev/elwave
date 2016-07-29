@@ -38,6 +38,19 @@ void ElasticWave::run()
 
 
 
+#ifdef MFEM_USE_MPI
+void ElasticWave::run_GMsFEM() const
+{
+  if (param.serial)
+    run_GMsFEM_serial();
+  else
+    run_GMsFEM_parallel();
+}
+#endif // MFEM_USE_MPI
+
+
+
+
 //------------------------------------------------------------------------------
 //
 // Auxiliary useful functions
