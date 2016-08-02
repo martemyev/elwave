@@ -369,6 +369,22 @@ void ElasticWave::run_GMsFEM_serial() const
 //      timer.Stop();
 //      time_of_seismograms += timer.UserTime();
 //    }
+
+    if (param.output.serial_solution && t_step % param.step_seis == 0)
+    {
+      Vector u_tmp(u_fine_0.Size());
+      R_global_T->Mult(U_0, u_tmp);
+
+      const string fname = string(param.output.directory) + "/" +
+                           param.output.extra_string + "_sol_t" + d2s(t_step) +
+                           ".bin";
+      ofstream bin_sol(fname.c_str(), std::ios::binary);
+      MFEM_VERIFY(bin_sol, "Cannot open file " << fname);
+      for (int i = 0; i < u_tmp.Size(); ++i) {
+        float val = u_tmp(i);
+        bin_sol.write(reinterpret_cast<char*>(&val), sizeof(val));
+      }
+    }
   }
 
   time_loop_timer.Stop();

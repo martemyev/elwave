@@ -477,23 +477,27 @@ void ElasticWave::run_GMsFEM_parallel() const
   const int tenth = 0.1 * n_time_steps;
 
   vector<int> loc2globSerial;
+  FiniteElementSpace *fespace_serial = NULL;
   if (param.output.serial_solution)
   {
-    FiniteElementSpace fespace_serial(param.mesh, &fec, dim);
+    fespace_serial = new FiniteElementSpace(param.mesh, &fec, dim);
     loc2globSerial.resize(fespace.GetNDofs(), -1);
     for (int el = 0; el < fespace.GetNE(); ++el)
     {
       const int glob_cell = fespace.GetAttribute(el) - 1;
       Array<int> loc_vdofs, glob_vdofs;
       fespace.GetElementVDofs(el, loc_vdofs);
-      fespace_serial.GetElementVDofs(glob_cell, glob_vdofs);
+      fespace_serial->GetElementVDofs(glob_cell, glob_vdofs);
       MFEM_ASSERT(loc_vdofs.Size() == glob_vdofs.Size(), "Number of dofs mismatches");
       for (int d = 0; d < loc_vdofs.Size(); ++d)
         loc2globSerial[loc_vdofs[d]] = glob_vdofs[d];
     }
-    for (size_t i = 0; i < loc2globSerial.size(); ++i)
+    out << "loc2globSerial" << endl;
+    for (size_t i = 0; i < loc2globSerial.size(); ++i) {
+      out << i << " " << loc2globSerial[i] << endl;
       MFEM_ASSERT(loc2globSerial[i] >= 0, "Local index " << i << " is not "
                   "mapped to a global one");
+    }
   }
 
   if (myid == 0)
@@ -530,6 +534,11 @@ void ElasticWave::run_GMsFEM_parallel() const
   double time_of_seismograms = 0.;
   for (int t_step = 1; t_step <= n_time_steps; ++t_step)
   {
+    const double glob_norm = GlobalLpNorm(2, U_0.Norml2(), MPI_COMM_WORLD);
+    if (myid == 0) {
+      cout << "step " << t_step << " / " << n_time_steps
+           << " ||U||_{L^2} = " << glob_norm << endl;
+    }
     {
       par_time_step(*M_coarse, *S_coarse, b_coarse, time_values[t_step-1],
                     param.dt, U_0, U_1, U_2, out);
@@ -541,7 +550,7 @@ void ElasticWave::run_GMsFEM_parallel() const
 
     // Compute and print the L^2 norm of the error
     if (t_step % tenth == 0) {
-      double glob_norm = GlobalLpNorm(2, U_0.Norml2(), MPI_COMM_WORLD);
+      const double glob_norm = GlobalLpNorm(2, U_0.Norml2(), MPI_COMM_WORLD);
       if (myid == 0) {
         cout << "step " << t_step << " / " << n_time_steps
              << " ||U||_{L^2} = " << glob_norm << endl;
@@ -604,18 +613,24 @@ void ElasticWave::run_GMsFEM_parallel() const
 
       MPI_Reduce(&glob_U[0], &glob_solution[0], n_dofs, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
 
-      const string fname = string(param.output.directory) + "/" +
-                           param.output.extra_string + "_sol_t" + d2s(t_step) +
-                           ".bin";
-      ofstream out(fname.c_str(), std::ios::binary);
-      for (int i = 0; i < n_dofs; ++i) {
-        float val = glob_solution[i];
-        out.write(reinterpret_cast<char*>(&val), sizeof(val));
+      if (myid == 0)
+      {
+        const string fname = string(param.output.directory) + "/" +
+                             param.output.extra_string + "_sol_t" + d2s(t_step) +
+                             ".bin";
+        ofstream bin_sol(fname.c_str(), std::ios::binary);
+        MFEM_VERIFY(bin_sol, "Cannot open file " << fname);
+        for (int i = 0; i < n_dofs; ++i) {
+          float val = glob_solution[i];
+          bin_sol.write(reinterpret_cast<char*>(&val), sizeof(val));
+        }
       }
     }
   }
 
   time_loop_timer.Stop();
+
+  delete fespace_serial;
 
   if (myid == 0)
   {
