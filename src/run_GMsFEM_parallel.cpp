@@ -481,7 +481,7 @@ void ElasticWave::run_GMsFEM_parallel() const
   if (param.output.serial_solution)
   {
     fespace_serial = new FiniteElementSpace(param.mesh, &fec, dim);
-    loc2globSerial.resize(fespace.GetNDofs(), -1);
+    loc2globSerial.resize(fespace.GetVSize(), -1);
     for (int el = 0; el < fespace.GetNE(); ++el)
     {
       const int glob_cell = fespace.GetAttribute(el) - 1;
@@ -534,11 +534,6 @@ void ElasticWave::run_GMsFEM_parallel() const
   double time_of_seismograms = 0.;
   for (int t_step = 1; t_step <= n_time_steps; ++t_step)
   {
-    const double glob_norm = GlobalLpNorm(2, U_0.Norml2(), MPI_COMM_WORLD);
-    if (myid == 0) {
-      cout << "step " << t_step << " / " << n_time_steps
-           << " ||U||_{L^2} = " << glob_norm << endl;
-    }
     {
       par_time_step(*M_coarse, *S_coarse, b_coarse, time_values[t_step-1],
                     param.dt, U_0, U_1, U_2, out);
