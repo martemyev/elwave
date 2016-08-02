@@ -308,6 +308,7 @@ OutputParameters::OutputParameters()
   , view_boundary_basis(false)
   , view_interior_basis(false)
   , view_dg_basis(false)
+  , serial_solution(false)
 { }
 
 void OutputParameters::AddOptions(OptionsParser& args)
@@ -329,6 +330,10 @@ void OutputParameters::AddOptions(OptionsParser& args)
   args.AddOption(&view_dg_basis, "-viewdgbasis", "--view-dg-basis",
                  "-no-viewdgbasis", "--no-view-dg-basis",
                  "Visualize DG multiscale basis (via GLVis)");
+  args.AddOption(&serial_solution, "-serial-solution", "--serial-solution",
+                 "-no-serial-solution", "--no-serial-solution",
+                 "Save parallel solution as it's obtained with a serial code "
+                 "(mostly for testing and comparison)");
 }
 
 void OutputParameters::check_parameters() const

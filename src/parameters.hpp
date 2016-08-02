@@ -194,6 +194,14 @@ public:
   bool view_interior_basis;
   bool view_dg_basis;
 
+  /**
+   * When computed in parallel - whether to save the solution corresponding a
+   * serial one. That allows to compare the solutions of parallel and serial
+   * runs, and also parallel solutions obtained with different number of
+   * processes.
+   */
+  bool serial_solution;
+
   void AddOptions(mfem::OptionsParser& args);
   void check_parameters() const;
 

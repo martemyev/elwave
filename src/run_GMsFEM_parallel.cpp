@@ -118,7 +118,6 @@ void ElasticWave::run_GMsFEM_parallel() const
   out << "FE space generation..." << flush;
   DG_FECollection fec(param.method.order, dim);
   ParFiniteElementSpace fespace(param.par_mesh, &fec, dim);
-//  FiniteElementSpace fespace_serial(param.mesh, &fec, dim);
   out << "done. Time = " << chrono.RealTime() << " sec" << endl;
 
   const HYPRE_Int n_dofs = fespace.GlobalTrueVSize();
@@ -477,6 +476,26 @@ void ElasticWave::run_GMsFEM_parallel() const
   const int n_time_steps = param.T / param.dt + 0.5; // nearest integer
   const int tenth = 0.1 * n_time_steps;
 
+  vector<int> loc2globSerial;
+  if (param.output.serial_solution)
+  {
+    FiniteElementSpace fespace_serial(param.mesh, &fec, dim);
+    loc2globSerial.resize(fespace.GetNDofs(), -1);
+    for (int el = 0; el < fespace.GetNE(); ++el)
+    {
+      const int glob_cell = fespace.GetAttribute(el) - 1;
+      Array<int> loc_vdofs, glob_vdofs;
+      fespace.GetElementVDofs(el, loc_vdofs);
+      fespace_serial.GetElementVDofs(glob_cell, glob_vdofs);
+      MFEM_ASSERT(loc_vdofs.Size() == glob_vdofs.Size(), "Number of dofs mismatches");
+      for (int d = 0; d < loc_vdofs.Size(); ++d)
+        loc2globSerial[loc_vdofs[d]] = glob_vdofs[d];
+    }
+    for (size_t i = 0; i < loc2globSerial.size(); ++i)
+      MFEM_ASSERT(loc2globSerial[i] >= 0, "Local index " << i << " is not "
+                  "mapped to a global one");
+  }
+
   if (myid == 0)
     cout << "N time steps = " << n_time_steps
          << "\nTime loop..." << endl;
@@ -486,8 +505,7 @@ void ElasticWave::run_GMsFEM_parallel() const
   for (int time_step = 1; time_step <= n_time_steps; ++time_step)
   {
     const double cur_time = time_step * param.dt;
-    time_values[time_step-1] = RickerWavelet(param.source,
-                                             cur_time - param.dt);
+    time_values[time_step-1] = RickerWavelet(param.source, cur_time - param.dt);
   }
 
   const string name = method_name + param.output.extra_string;
@@ -512,8 +530,6 @@ void ElasticWave::run_GMsFEM_parallel() const
   double time_of_seismograms = 0.;
   for (int t_step = 1; t_step <= n_time_steps; ++t_step)
   {
-    double glob_norm = GlobalLpNorm(2, U_0.Norml2(), MPI_COMM_WORLD);
-    out << "t_step " << t_step << "||U|| = " << glob_norm << endl;
     {
       par_time_step(*M_coarse, *S_coarse, b_coarse, time_values[t_step-1],
                     param.dt, U_0, U_1, U_2, out);
@@ -523,14 +539,14 @@ void ElasticWave::run_GMsFEM_parallel() const
 //                param.dt, SysFine, PrecFine, u_fine_0, u_fine_1, u_fine_2);
 //    }
 
-//    // Compute and print the L^2 norm of the error
-//    if (t_step % tenth == 0 && myid == 0) {
-//      cout << "step " << t_step << " / " << n_time_steps
-//           << " ||U||_{L^2} = " << U_0.Norml2()
-//           //<< " ||u||_{L^2} = " << u_fine_0.Norml2()
-//           << endl;
-//    }
-
+    // Compute and print the L^2 norm of the error
+    if (t_step % tenth == 0) {
+      double glob_norm = GlobalLpNorm(2, U_0.Norml2(), MPI_COMM_WORLD);
+      if (myid == 0) {
+        cout << "step " << t_step << " / " << n_time_steps
+             << " ||U||_{L^2} = " << glob_norm << endl;
+      }
+    }
 
     {
       StopWatch timer;
@@ -575,6 +591,28 @@ void ElasticWave::run_GMsFEM_parallel() const
 //      timer.Stop();
 //      time_of_seismograms += timer.UserTime();
 //    }
+
+    if (param.output.serial_solution && t_step % param.step_seis == 0)
+    {
+      vector<double> glob_U(n_dofs, 0.);
+      vector<double> glob_solution(n_dofs, 0.);
+
+      HypreParVector u_tmp(&fespace);
+      R_global_T->Mult(U_0, u_tmp);
+      for (int i = 0; i < u_tmp.Size(); ++i)
+        glob_U[loc2globSerial[i]] = u_tmp(i);
+
+      MPI_Reduce(&glob_U[0], &glob_solution[0], n_dofs, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+
+      const string fname = string(param.output.directory) + "/" +
+                           param.output.extra_string + "_sol_t" + d2s(t_step) +
+                           ".bin";
+      ofstream out(fname.c_str(), std::ios::binary);
+      for (int i = 0; i < n_dofs; ++i) {
+        float val = glob_solution[i];
+        out.write(reinterpret_cast<char*>(&val), sizeof(val));
+      }
+    }
   }
 
   time_loop_timer.Stop();
