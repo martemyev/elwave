@@ -72,7 +72,8 @@ void SourceParameters::AddOptions(OptionsParser& args)
   args.AddOption(&location(1), "-srcy", "--source-y", "y-coord of a source location");
   args.AddOption(&location(2), "-srcz", "--source-z", "z-coord of a source location");
   args.AddOption(&frequency, "-f0", "--source-frequency", "Central frequency of a source");
-  args.AddOption(&direction, "-dir", "--source-direction", "Direction of point force or plane wave source (1 OX, 2 OY, 3 OZ)");
+  args.AddOption(&direction, "-dir", "--source-direction", "Direction of point "
+                 "force or plane wave source (1 OX, 2 OY, 3 OZ)");
   args.AddOption(&scale, "-scale", "--source-scale", "Scaling factor for the source");
   args.AddOption(&Mxx, "-mxx", "--moment-tensor-xx", "xx-component of a moment tensor source");
   args.AddOption(&Mxy, "-mxy", "--moment-tensor-xy", "xy-component of a moment tensor source");
@@ -80,10 +81,14 @@ void SourceParameters::AddOptions(OptionsParser& args)
   args.AddOption(&Myy, "-myy", "--moment-tensor-yy", "yy-component of a moment tensor source");
   args.AddOption(&Myz, "-myz", "--moment-tensor-yz", "yz-component of a moment tensor source");
   args.AddOption(&Mzz, "-mzz", "--moment-tensor-zz", "zz-component of a moment tensor source");
-  args.AddOption(&type, "-type", "--source-type", "Type of the source (pointforce, momenttensor)");
-  args.AddOption(&spatial_function, "-spatial", "--source-spatial", "Spatial function of the source (delta, gauss)");
-  args.AddOption(&gauss_support, "-gs", "--gauss-support", "Gauss support for 'gauss' spatial function of the source");
-  args.AddOption(&plane_wave, "-planewave", "--plane-wave", "-noplanewave", "--no-plane-wave", "Plane wave as a source");
+  args.AddOption(&type, "-type", "--source-type", "Type of the source "
+                 "(pointforce, momenttensor)");
+  args.AddOption(&spatial_function, "-spatial", "--source-spatial", "Spatial "
+                 "function of the source (delta, gauss)");
+  args.AddOption(&gauss_support, "-gs", "--gauss-support", "Gauss support for "
+                 "'gauss' spatial function of the source");
+  args.AddOption(&plane_wave, "-planewave", "--plane-wave", "-no-planewave",
+                 "--no-plane-wave", "Plane wave as a source");
 }
 
 void SourceParameters::check_parameters() const
