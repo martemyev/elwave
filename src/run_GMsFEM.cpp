@@ -24,7 +24,7 @@ static void fill_up_n_fine_cells_per_coarse(int n_fine, int n_coarse,
 
 
 
-void ElasticWave::compute_R_matrices(ostream &out,
+void ElasticWave::compute_R_matrices(ostream &log,
                                      const vector<vector<int> > &map_cell_dofs,
                                      vector<vector<int> > &local2global,
                                      vector<DenseMatrix> &R) const
@@ -57,7 +57,7 @@ void ElasticWave::compute_R_matrices(ostream &out,
   const int my_start_cell = min_n_cells * myid + (extra_cells < myid ? extra_cells : myid);
   const int my_end_cell   = my_start_cell + min_n_cells + (extra_cells > myid);
 
-  out << "coarse cells: start " << my_start_cell << " end " << my_end_cell << endl;
+  log << "coarse cells: start " << my_start_cell << " end " << my_end_cell << endl;
 
   local2global.resize(my_end_cell - my_start_cell);
   R.resize(my_end_cell - my_start_cell);
@@ -86,7 +86,7 @@ void ElasticWave::compute_R_matrices(ostream &out,
           continue;
         }
         const int my_coarse_cell = global_coarse_cell - my_start_cell;
-        out << "\nglobal_coarse_cell " << global_coarse_cell
+        log << "\nglobal_coarse_cell " << global_coarse_cell
             << " my_coarse_cell " << my_coarse_cell << endl;
 
         Mesh *ccell_fine_mesh =
@@ -113,7 +113,7 @@ void ElasticWave::compute_R_matrices(ostream &out,
         CWConstCoefficient local_lambda_coef(local_lambda, true);
         CWConstCoefficient local_mu_coef(local_mu, true);
 
-        compute_basis_CG(out, ccell_fine_mesh, param.method.gms_nb, param.method.gms_ni,
+        compute_basis_CG(log, ccell_fine_mesh, param.method.gms_nb, param.method.gms_ni,
                          local_rho_coef, local_lambda_coef, local_mu_coef,
                          R[my_coarse_cell]);
 
@@ -189,7 +189,7 @@ void ElasticWave::compute_R_matrices(ostream &out,
             continue;
           }
           const int my_coarse_cell = global_coarse_cell - my_start_cell;
-          out << "\nglobal_coarse_cell " << global_coarse_cell
+          log << "\nglobal_coarse_cell " << global_coarse_cell
               << " my_coarse_cell " << my_coarse_cell << endl;
 
           Mesh *ccell_fine_mesh =
@@ -223,7 +223,7 @@ void ElasticWave::compute_R_matrices(ostream &out,
           CWConstCoefficient local_lambda_coef(local_lambda, true);
           CWConstCoefficient local_mu_coef(local_mu, true);
 
-          compute_basis_CG(cout, ccell_fine_mesh, param.method.gms_nb, param.method.gms_ni,
+          compute_basis_CG(log, ccell_fine_mesh, param.method.gms_nb, param.method.gms_ni,
                            local_rho_coef, local_lambda_coef, local_mu_coef,
                            R[my_coarse_cell]);
 

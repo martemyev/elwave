@@ -13,7 +13,7 @@ using namespace mfem;
 
 static void par_time_step(HypreParMatrix &M, HypreParMatrix &S,
                           const Vector &b, double timeval, double dt,
-                          Vector &U_0, Vector &U_1, Vector &U_2, ostream &out)
+                          Vector &U_0, Vector &U_1, Vector &U_2, ostream &log)
 {
   HypreSmoother M_prec;
   CGSolver M_solver(M.GetComm());
@@ -28,27 +28,37 @@ static void par_time_step(HypreParMatrix &M, HypreParMatrix &S,
   M_solver.SetMaxIter(100);
   M_solver.SetPrintLevel(0);
 
-  { double norm = GlobalLpNorm(2, U_0.Norml2(), M.GetComm()); out << "||U_0|| = " << norm << endl; }
-  { double norm = GlobalLpNorm(2, U_1.Norml2(), M.GetComm()); out << "||U_1|| = " << norm << endl; }
-  { double norm = GlobalLpNorm(2, U_2.Norml2(), M.GetComm()); out << "||U_2|| = " << norm << endl; }
+#ifdef MFEM_DEBUG
+  { double norm = GlobalLpNorm(2, U_0.Norml2(), M.GetComm()); log << "||U_0|| = " << norm << endl; }
+  { double norm = GlobalLpNorm(2, U_1.Norml2(), M.GetComm()); log << "||U_1|| = " << norm << endl; }
+  { double norm = GlobalLpNorm(2, U_2.Norml2(), M.GetComm()); log << "||U_2|| = " << norm << endl; }
+#endif // MFEM_DEBUG
 
   Vector y = U_1; y *= 2.0; y -= U_2;        // y = 2*u_1 - u_2
 
-  { double norm = GlobalLpNorm(2, y.Norml2(), M.GetComm()); out << "||y|| = " << norm << endl; }
+#ifdef MFEM_DEBUG
+  { double norm = GlobalLpNorm(2, y.Norml2(), M.GetComm()); log << "||y|| = " << norm << endl; }
+#endif // MFEM_DEBUG
 
   Vector z0 = U_0;                           // z0 = M * (2*u_1 - u_2)
   M.Mult(y, z0);
 
-  { double norm = GlobalLpNorm(2, z0.Norml2(), M.GetComm()); out << "||z0|| = " << norm << endl; }
+#ifdef MFEM_DEBUG
+  { double norm = GlobalLpNorm(2, z0.Norml2(), M.GetComm()); log << "||z0|| = " << norm << endl; }
+#endif // MFEM_DEBUG
 
   Vector z1 = U_0;                           // z1 = S * u_1
   S.Mult(U_1, z1);
 
-  { double norm = GlobalLpNorm(2, z1.Norml2(), M.GetComm()); out << "||z1|| = " << norm << endl; }
+#ifdef MFEM_DEBUG
+  { double norm = GlobalLpNorm(2, z1.Norml2(), M.GetComm()); log << "||z1|| = " << norm << endl; }
+#endif // MFEM_DEBUG
 
   Vector z2 = b; z2 *= timeval; // z2 = timeval*source
 
-  { double norm = GlobalLpNorm(2, z2.Norml2(), M.GetComm()); out << "||z2|| = " << norm << endl; }
+#ifdef MFEM_DEBUG
+  { double norm = GlobalLpNorm(2, z2.Norml2(), M.GetComm()); log << "||z2|| = " << norm << endl; }
+#endif // MFEM_DEBUG
 
   // y = dt^2 * (S*u_1 - timeval*source), where it can be
   // y = dt^2 * (S*u_1 - ricker*pointforce) OR
@@ -61,7 +71,9 @@ static void par_time_step(HypreParMatrix &M, HypreParMatrix &S,
   MPI_Barrier(MPI_COMM_WORLD);
   M_solver.Mult(RHS, U_0);
 
-  { double norm = GlobalLpNorm(2, U_0.Norml2(), M.GetComm()); out << "||U_0|| = " << norm << endl; }
+#ifdef MFEM_DEBUG
+  { double norm = GlobalLpNorm(2, U_0.Norml2(), M.GetComm()); log << "||U_0|| = " << norm << endl; }
+#endif // MFEM_DEBUG
 
   U_2 = U_1;
   U_1 = U_0;
@@ -106,28 +118,28 @@ void ElasticWave::run_GMsFEM_parallel() const
   MPI_Comm_rank(MPI_COMM_WORLD, &myid);
   MPI_Comm_size(MPI_COMM_WORLD, &size);
 
-  string fileout = string(param.output.directory) + "/outputlog." + d2s(myid);
-  ofstream out(fileout.c_str());
-  MFEM_VERIFY(out, "Cannot open file " << fileout);
+  string filelog = string(param.output.directory) + "/outputlog." + d2s(myid);
+  ofstream log(filelog.c_str());
+  MFEM_VERIFY(log, "Cannot open file " << filelog);
 
   StopWatch chrono;
   chrono.Start();
 
   const int dim = param.dimension;
 
-  out << "FE space generation..." << flush;
+  log << "FE space generation..." << flush;
   DG_FECollection fec(param.method.order, dim);
   ParFiniteElementSpace fespace(param.par_mesh, &fec, dim);
-  out << "done. Time = " << chrono.RealTime() << " sec" << endl;
+  log << "done. Time = " << chrono.RealTime() << " sec" << endl;
 
   const HYPRE_Int n_dofs = fespace.GlobalTrueVSize();
-  out << "Number of unknowns: " << n_dofs << endl;
+  log << "Number of unknowns: " << n_dofs << endl;
 
   CWConstCoefficient rho_coef(param.media.rho_array, false);
   CWConstCoefficient lambda_coef(param.media.lambda_array, false);
   CWConstCoefficient mu_coef(param.media.mu_array, false);
 
-  out << "Fine scale stif matrix..." << flush;
+  log << "Fine scale stif matrix..." << flush;
   chrono.Clear();
   ParBilinearForm stif_fine(&fespace);
   stif_fine.AddDomainIntegrator(new ElasticityIntegrator(lambda_coef, mu_coef));
@@ -140,26 +152,26 @@ void ElasticWave::run_GMsFEM_parallel() const
   stif_fine.Assemble();
   stif_fine.Finalize();
   HypreParMatrix *S_fine = stif_fine.ParallelAssemble();
-  out << "done. Time = " << chrono.RealTime() << " sec" << endl;
+  log << "done. Time = " << chrono.RealTime() << " sec" << endl;
 
 
-  out << "Fine scale mass matrix..." << flush;
+  log << "Fine scale mass matrix..." << flush;
   chrono.Clear();
   ParBilinearForm mass_fine(&fespace);
   mass_fine.AddDomainIntegrator(new VectorMassIntegrator(rho_coef));
   mass_fine.Assemble();
   mass_fine.Finalize();
   HypreParMatrix *M_fine = mass_fine.ParallelAssemble();
-  out << "done. Time = " << chrono.RealTime() << " sec" << endl;
+  log << "done. Time = " << chrono.RealTime() << " sec" << endl;
 
-  out << "System matrix..." << flush;
+  log << "System matrix..." << flush;
   chrono.Clear();
   ParBilinearForm sys_fine(&fespace);
   sys_fine.AddDomainIntegrator(new VectorMassIntegrator(rho_coef));
   sys_fine.Assemble();
   sys_fine.Finalize();
   HypreParMatrix *Sys_fine = sys_fine.ParallelAssemble();
-  out << "done. Time = " << chrono.RealTime() << " sec" << endl;
+  log << "done. Time = " << chrono.RealTime() << " sec" << endl;
 
   //HypreParMatrix SysFine((hypre_ParCSRMatrix*)(*M_fine));
   //SysFine = 0.0;
@@ -167,7 +179,7 @@ void ElasticWave::run_GMsFEM_parallel() const
   //SysFine += M_fine;
 
 
-  out << "Fine scale RHS vector... " << flush;
+  log << "Fine scale RHS vector... " << flush;
   chrono.Clear();
   ParLinearForm b_fine(&fespace);
   if (param.source.plane_wave)
@@ -193,8 +205,11 @@ void ElasticWave::run_GMsFEM_parallel() const
     else MFEM_ABORT("Unknown source type: " + string(param.source.type));
   }
   HypreParVector *b = b_fine.ParallelAssemble();
-  out << "||b_h||_L2 = " << b_fine.Norml2() << endl
-      << "done. Time = " << chrono.RealTime() << " sec" << endl;
+  const double b_fine_norm = GlobalLpNorm(2, b_fine.Norml2(), MPI_COMM_WORLD);
+  if (myid == 0) {
+    cout << "||b_h||_L2 = " << b_fine_norm << endl
+         << "done. Time = " << chrono.RealTime() << " sec" << endl;
+  }
 
 /*
   HypreBoomerAMG amg(*M_fine);
@@ -220,11 +235,11 @@ void ElasticWave::run_GMsFEM_parallel() const
     }
   }
 
-  out << "my_cells_dofs:\n";
+  log << "my_cells_dofs:\n";
   for (size_t i = 0; i < my_cells_dofs.size(); ++i) {
     if (my_cells_dofs[i] < 0)
-      out << endl;
-    out << my_cells_dofs[i] << " ";
+      log << endl;
+    log << my_cells_dofs[i] << " ";
   }
 
   if (myid == 0)
@@ -254,35 +269,35 @@ void ElasticWave::run_GMsFEM_parallel() const
   MPI_Bcast(&my_cells_dofs[0], nglob_cell_dofs, MPI_INT, 0, MPI_COMM_WORLD);
 
   const int globNE = param.mesh->GetNE();
-  out << "globNE " << globNE << endl;
+  log << "globNE " << globNE << endl;
   vector<vector<int> > map_cell_dofs(globNE);
   for (int el = 0, k = 0; el < globNE; ++el)
   {
-    MFEM_VERIFY(k < (int)my_cells_dofs.size(), "k is out of range");
+    MFEM_ASSERT(k < (int)my_cells_dofs.size(), "k is out of range");
     int cellID = my_cells_dofs[k++];
-    MFEM_VERIFY(cellID <= 0, "Incorrect cellID");
+    MFEM_ASSERT(cellID <= 0, "Incorrect cellID");
     cellID = -cellID;
     const int ndofs = my_cells_dofs[k++];
     if (!(cellID >= 0 && cellID < globNE))
-      out << "el " << el << " cellID " << cellID << endl;
-    MFEM_VERIFY(cellID >= 0 && cellID < globNE, "cellID is out of range");
-    MFEM_VERIFY(map_cell_dofs[cellID].empty(), "This cellID has been already added");
+      log << "el " << el << " cellID " << cellID << endl;
+    MFEM_ASSERT(cellID >= 0 && cellID < globNE, "cellID is out of range");
+    MFEM_ASSERT(map_cell_dofs[cellID].empty(), "This cellID has been already added");
     map_cell_dofs[cellID].resize(ndofs);
     for (int i = 0; i < ndofs; ++i)
       map_cell_dofs[cellID][i] = my_cells_dofs[k++];
   }
 
-  out << "map_cell_dofs:\n";
+  log << "map_cell_dofs:\n";
   for (size_t i = 0; i < map_cell_dofs.size(); ++i) {
-    out << i << " ";
+    log << i << " ";
     for (size_t j = 0; j < map_cell_dofs[i].size(); ++j)
-      out << map_cell_dofs[i][j] << " ";
-    out << endl;
+      log << map_cell_dofs[i][j] << " ";
+    log << endl;
   }
 
   vector<vector<int> > local2global;
   vector<DenseMatrix> R;
-  compute_R_matrices(out, map_cell_dofs, local2global, R);
+  compute_R_matrices(log, map_cell_dofs, local2global, R);
 
   // my portion of the global sparse R matrix
   int my_nrows = 0;
@@ -303,8 +318,8 @@ void ElasticWave::run_GMsFEM_parallel() const
   MPI_Allreduce(&my_nrows, &glob_nrows, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
   MPI_Allreduce(&my_ncols, &glob_ncols, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
 
-  out << "\nmy_nrows " << my_nrows << " my_ncols " << my_ncols << endl;
-  out << "glob_nrows " << glob_nrows << " glob_ncols " << glob_ncols << endl;
+  log << "\nmy_nrows " << my_nrows << " my_ncols " << my_ncols << endl;
+  log << "glob_nrows " << glob_nrows << " glob_ncols " << glob_ncols << endl;
 
   int *Rrows = new int[size + 1];
   if (myid == 0)
@@ -325,10 +340,10 @@ void ElasticWave::run_GMsFEM_parallel() const
   }
   MPI_Bcast(Rrows, size + 1, MPI_INT, 0, MPI_COMM_WORLD);
 
-  out << "\nRrows: ";
+  log << "\nRrows: ";
   for (int i = 0; i < size + 1; ++i)
-    out << Rrows[i] << " ";
-  out << endl;
+    log << Rrows[i] << " ";
+  log << endl;
 
   const int start_row = Rrows[myid];
   const int end_row   = Rrows[myid + 1];
@@ -339,10 +354,10 @@ void ElasticWave::run_GMsFEM_parallel() const
   const int *M_row_starts = M_fine->RowPart();
   const int *M_col_starts = M_fine->ColPart();
 
-  out << "S_row_starts: " << S_row_starts[0] << " " << S_row_starts[1] << endl;
-  out << "S_col_starts: " << S_col_starts[0] << " " << S_col_starts[1] << endl;
-  out << "M_row_starts: " << M_row_starts[0] << " " << M_row_starts[1] << endl;
-  out << "M_col_starts: " << M_col_starts[0] << " " << M_col_starts[1] << endl;
+  log << "S_row_starts: " << S_row_starts[0] << " " << S_row_starts[1] << endl;
+  log << "S_col_starts: " << S_col_starts[0] << " " << S_col_starts[1] << endl;
+  log << "M_row_starts: " << M_row_starts[0] << " " << M_row_starts[1] << endl;
+  log << "M_col_starts: " << M_col_starts[0] << " " << M_col_starts[1] << endl;
 
   int *Ri = new int[my_nrows + 1];
   int *Rj = new int[my_nnonzero];
@@ -397,63 +412,80 @@ void ElasticWave::run_GMsFEM_parallel() const
   {
     {
       chrono.Clear();
-      cout << "Output R local matrices..." << flush;
+      if (myid == 0)
+        cout << "Output R local matrices..." << flush;
       for (size_t r = 0; r < R.size(); ++r) {
         const string fname = string(param.output.directory) + "/r" + d2s(r) + "_local_par.dat." + d2s(myid);
         ofstream mout(fname.c_str());
         MFEM_VERIFY(mout, "Cannot open file " + fname);
         R[r].PrintMatlab(mout);
       }
-      cout << "done. Time = " << chrono.RealTime() << " sec" << endl;
+      if (myid == 0)
+        cout << "done. Time = " << chrono.RealTime() << " sec" << endl;
     }
     {
       chrono.Clear();
-      cout << "Output R_global matrix..." << flush;
+      if (myid == 0)
+        cout << "Output R_global matrix..." << flush;
       const string fname = string(param.output.directory) + "/r_global_par.dat";
       print_par_matrix_matlab(R_global, fname);
-      cout << "done. Time = " << chrono.RealTime() << " sec" << endl;
+      if (myid == 0)
+        cout << "done. Time = " << chrono.RealTime() << " sec" << endl;
     }
     {
       chrono.Clear();
-      cout << "Output R_global_T matrix..." << flush;
+      if (myid == 0)
+        cout << "Output R_global_T matrix..." << flush;
       const string fname = string(param.output.directory) + "/r_global_t_par.dat";
       print_par_matrix_matlab(*R_global_T, fname);
-      cout << "done. Time = " << chrono.RealTime() << " sec" << endl;
+      if (myid == 0)
+        cout << "done. Time = " << chrono.RealTime() << " sec" << endl;
     }
     {
       chrono.Clear();
-      cout << "Output M_fine matrix..." << flush;
+      if (myid == 0)
+        cout << "Output M_fine matrix..." << flush;
       const string fname = string(param.output.directory) + "/m_fine_par.dat";
       print_par_matrix_matlab(*M_fine, fname);
-      cout << "done. Time = " << chrono.RealTime() << " sec" << endl;
+      if (myid == 0)
+        cout << "done. Time = " << chrono.RealTime() << " sec" << endl;
     }
     {
       chrono.Clear();
-      cout << "Output S_fine matrix..." << flush;
+      if (myid == 0)
+        cout << "Output S_fine matrix..." << flush;
       const string fname = string(param.output.directory) + "/s_fine_par.dat";
       print_par_matrix_matlab(*S_fine, fname);
-      cout << "done. Time = " << chrono.RealTime() << " sec" << endl;
+      if (myid == 0)
+        cout << "done. Time = " << chrono.RealTime() << " sec" << endl;
     }
     {
       chrono.Clear();
-      cout << "Output M_coarse matrix..." << flush;
+      if (myid == 0)
+        cout << "Output M_coarse matrix..." << flush;
       const string fname = string(param.output.directory) + "/m_coarse_par.dat";
       print_par_matrix_matlab(*M_coarse, fname);
-      cout << "done. Time = " << chrono.RealTime() << " sec" << endl;
+      if (myid == 0)
+        cout << "done. Time = " << chrono.RealTime() << " sec" << endl;
     }
     {
       chrono.Clear();
-      cout << "Output S_coarse matrix..." << flush;
+      if (myid == 0)
+        cout << "Output S_coarse matrix..." << flush;
       const string fname = string(param.output.directory) + "/s_coarse_par.dat";
       print_par_matrix_matlab(*S_coarse, fname);
-      cout << "done. Time = " << chrono.RealTime() << " sec" << endl;
+      if (myid == 0)
+        cout << "done. Time = " << chrono.RealTime() << " sec" << endl;
     }
   }
 
   HypreParVector b_coarse(*M_coarse);
   R_global.Mult(*b, b_coarse);
 
-  { double norm = GlobalLpNorm(2, b_coarse.Norml2(), MPI_COMM_WORLD); out << "||b_H|| = " << norm << endl; }
+  {
+    const double norm = GlobalLpNorm(2, b_coarse.Norml2(), MPI_COMM_WORLD);
+    log << "||b_H|| = " << norm << endl;
+  }
 
   const string method_name = "parGMsFEM_";
 
@@ -477,32 +509,32 @@ void ElasticWave::run_GMsFEM_parallel() const
   const int tenth = 0.1 * n_time_steps;
 
   vector<int> loc2globSerial;
-  FiniteElementSpace *fespace_serial = NULL;
   if (param.output.serial_solution)
   {
-    fespace_serial = new FiniteElementSpace(param.mesh, &fec, dim);
+    FiniteElementSpace fespace_serial(param.mesh, &fec, dim);
     loc2globSerial.resize(fespace.GetVSize(), -1);
     for (int el = 0; el < fespace.GetNE(); ++el)
     {
       const int glob_cell = fespace.GetAttribute(el) - 1;
       Array<int> loc_vdofs, glob_vdofs;
       fespace.GetElementVDofs(el, loc_vdofs);
-      fespace_serial->GetElementVDofs(glob_cell, glob_vdofs);
+      fespace_serial.GetElementVDofs(glob_cell, glob_vdofs);
       MFEM_ASSERT(loc_vdofs.Size() == glob_vdofs.Size(), "Number of dofs mismatches");
       for (int d = 0; d < loc_vdofs.Size(); ++d)
         loc2globSerial[loc_vdofs[d]] = glob_vdofs[d];
     }
-    out << "loc2globSerial" << endl;
+    log << "loc2globSerial" << endl;
     for (size_t i = 0; i < loc2globSerial.size(); ++i) {
-      out << i << " " << loc2globSerial[i] << endl;
+      log << i << " " << loc2globSerial[i] << endl;
       MFEM_ASSERT(loc2globSerial[i] >= 0, "Local index " << i << " is not "
                   "mapped to a global one");
     }
   }
 
-  if (myid == 0)
+  if (myid == 0) {
     cout << "N time steps = " << n_time_steps
          << "\nTime loop..." << endl;
+  }
 
   // the values of the time-dependent part of the source
   vector<double> time_values(n_time_steps);
@@ -536,7 +568,7 @@ void ElasticWave::run_GMsFEM_parallel() const
   {
     {
       par_time_step(*M_coarse, *S_coarse, b_coarse, time_values[t_step-1],
-                    param.dt, U_0, U_1, U_2, out);
+                    param.dt, U_0, U_1, U_2, log);
     }
 //    {
 //      time_step(M_fine, S_fine, b_fine, time_values[t_step-1],
@@ -557,7 +589,10 @@ void ElasticWave::run_GMsFEM_parallel() const
       timer.Start();
       HypreParVector u_tmp(&fespace);
       R_global_T->Mult(U_0, u_tmp);
-      { double norm = GlobalLpNorm(2, u_tmp.Norml2(), MPI_COMM_WORLD); out << "||utmp_H|| = " << norm << endl; }
+      {
+        const double norm = GlobalLpNorm(2, u_tmp.Norml2(), MPI_COMM_WORLD);
+        log << "||utmp_H|| = " << norm << endl;
+      }
       if (t_step % param.step_snap == 0) {
         visit_dc.SetCycle(t_step);
         visit_dc.SetTime(t_step*param.dt);
@@ -566,7 +601,7 @@ void ElasticWave::run_GMsFEM_parallel() const
         visit_dc.Save();
       }
       timer.Stop();
-      time_of_snapshots += timer.UserTime();
+      time_of_snapshots += timer.RealTime();
     }
 
     if (t_step % param.step_snap == 0)
@@ -593,7 +628,7 @@ void ElasticWave::run_GMsFEM_parallel() const
 //      R_global_T.Mult(U_0, u_0);
 //      output_seismograms(param, *param.mesh, u_0, seisU);
 //      timer.Stop();
-//      time_of_seismograms += timer.UserTime();
+//      time_of_seismograms += timer.RealTime();
 //    }
 
     if (param.output.serial_solution && t_step % param.step_seis == 0)
@@ -608,8 +643,7 @@ void ElasticWave::run_GMsFEM_parallel() const
 
       MPI_Reduce(&glob_U[0], &glob_solution[0], n_dofs, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
 
-      if (myid == 0)
-      {
+      if (myid == 0) {
         const string fname = string(param.output.directory) + "/" +
                              param.output.extra_string + "_sol_t" + d2s(t_step) +
                              ".bin";
@@ -625,16 +659,12 @@ void ElasticWave::run_GMsFEM_parallel() const
 
   time_loop_timer.Stop();
 
-  delete fespace_serial;
-
-  if (myid == 0)
-  {
+  if (myid == 0) {
     delete[] seisU;
     delete[] seisV;
   }
 
-  if (myid == 0)
-  {
+  if (myid == 0) {
     cout << "Time loop is over\n\tpure time = " << time_loop_timer.UserTime()
          << "\n\ttime of snapshots = " << time_of_snapshots
          << "\n\ttime of seismograms = " << time_of_seismograms << endl;

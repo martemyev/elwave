@@ -12,7 +12,7 @@ using namespace mfem;
 
 
 static
-void compute_boundary_basis_CG(ostream &out, const Parameters &param, Mesh *fine_mesh,
+void compute_boundary_basis_CG(ostream &log, const Parameters &param, Mesh *fine_mesh,
                                int n_boundary_bf, int n_interior_bf,
                                Coefficient &rho_coef,
                                Coefficient &lambda_coef,
@@ -22,17 +22,17 @@ void compute_boundary_basis_CG(ostream &out, const Parameters &param, Mesh *fine
   StopWatch chrono;
   chrono.Start();
 
-  out << "FE space generation..." << flush;
+  log << "FE space generation..." << flush;
   H1_FECollection fec(param.method.order, param.dimension);
   FiniteElementSpace fespace(fine_mesh, &fec, param.dimension);
-  out << "done. Time = " << chrono.RealTime() << " sec" << endl;
+  log << "done. Time = " << chrono.RealTime() << " sec" << endl;
 
   chrono.Clear();
-  out << "Stif matrix..." << flush;
+  log << "Stif matrix..." << flush;
   BilinearForm stif(&fespace);
   stif.AddDomainIntegrator(new ElasticityIntegrator(lambda_coef, mu_coef));
   stif.Assemble();
-  out << "done. Time = " << chrono.RealTime() << " sec" << endl;
+  log << "done. Time = " << chrono.RealTime() << " sec" << endl;
 
   Array<int> ess_bdr;
   Array<int> ess_tdof_list;
@@ -44,7 +44,7 @@ void compute_boundary_basis_CG(ostream &out, const Parameters &param, Mesh *fine
   }
 
   chrono.Clear();
-  out << "Snapshot matrix..." << flush;
+  log << "Snapshot matrix..." << flush;
   DenseMatrix W(fespace.GetVSize(), ess_tdof_list.Size());
   {
 
@@ -95,37 +95,40 @@ void compute_boundary_basis_CG(ostream &out, const Parameters &param, Mesh *fine
       mode_sock.close();
     }
   }
-  out << "done. Time = " << chrono.RealTime() << " sec" << endl;
+  log << "done. Time = " << chrono.RealTime() << " sec" << endl;
 
   chrono.Clear();
-  out << "Sfull matrix..." << flush;
+  log << "Sfull matrix..." << flush;
   const SparseMatrix &S = stif.SpMat();
   const SparseMatrix &Se= stif.SpMatElim();
   SparseMatrix *Sfull = Add(S, Se);
-  out << "done. Time = " << chrono.RealTime() << " sec" << endl;
+  log << "done. Time = " << chrono.RealTime() << " sec" << endl;
 
   chrono.Clear();
-  out << "WTSW matrix..." << flush;
+  log << "WTSW matrix..." << flush;
   const DenseMatrix *WTSW = RAP(*Sfull, W);
   delete Sfull;
-  out << "done. Time = " << chrono.RealTime() << " sec" << endl;
+  log << "done. Time = " << chrono.RealTime() << " sec" << endl;
 
   chrono.Clear();
-  out << "Edge mass matrix..." << flush;
+  log << "Edge mass matrix..." << flush;
   BilinearForm edge_mass(&fespace);
   edge_mass.AddBoundaryIntegrator(new VectorMassIntegrator(rho_coef));
   edge_mass.Assemble();
   edge_mass.Finalize();
-  out << "done. Time = " << chrono.RealTime() << " sec" << endl;
+  log << "done. Time = " << chrono.RealTime() << " sec" << endl;
 
   chrono.Clear();
-  out << "WTEMW matrix..." << flush;
+  log << "WTEMW matrix..." << flush;
   const SparseMatrix &EM = edge_mass.SpMat();
   const DenseMatrix *WTEMW = RAP(EM, W);
-  out << "done. Time = " << chrono.RealTime() << " sec" << endl;
+  log << "done. Time = " << chrono.RealTime() << " sec" << endl;
 
+  chrono.Clear();
+  log << "Solving the eigenproblem..." << endl;
   DenseMatrix eigenvectors(WTSW->Height(), WTSW->Width());
   solve_dsygvd(*WTSW, *WTEMW, eigenvectors);
+  log << "done. Time = " << chrono.RealTime() << " sec" << endl;
 
   DenseMatrix selected_eigenvectors(eigenvectors.Height(), n_boundary_bf);
   selected_eigenvectors.CopyCols(eigenvectors, 0, n_boundary_bf-1);
@@ -171,7 +174,7 @@ void compute_boundary_basis_CG(ostream &out, const Parameters &param, Mesh *fine
 
 
 static
-void compute_interior_basis_CG(ostream &out, const Parameters &param, Mesh *fine_mesh,
+void compute_interior_basis_CG(ostream &log, const Parameters &param, Mesh *fine_mesh,
                                int n_boundary_bf, int n_interior_bf,
                                Coefficient &rho_coef,
                                Coefficient &lambda_coef,
@@ -183,10 +186,10 @@ void compute_interior_basis_CG(ostream &out, const Parameters &param, Mesh *fine
 
   ParMesh par_fine_mesh(MPI_COMM_SELF, *fine_mesh);
 
-  out << "Parallel FE space generation..." << flush;
+  log << "Parallel FE space generation..." << flush;
   H1_FECollection fec(param.method.order, param.dimension);
   ParFiniteElementSpace par_fespace(&par_fine_mesh, &fec, param.dimension);
-  out << "done. Time = " << chrono.RealTime() << " sec" << endl;
+  log << "done. Time = " << chrono.RealTime() << " sec" << endl;
 
   Array<int> ess_bdr;
   if (fine_mesh->bdr_attributes.Size())
@@ -196,24 +199,24 @@ void compute_interior_basis_CG(ostream &out, const Parameters &param, Mesh *fine
   }
 
   chrono.Clear();
-  out << "Par Stif matrix..." << flush;
+  log << "Par Stif matrix..." << flush;
   ParBilinearForm par_stif(&par_fespace);
   par_stif.AddDomainIntegrator(new ElasticityIntegrator(lambda_coef, mu_coef));
   par_stif.Assemble();
   par_stif.EliminateEssentialBCDiag(ess_bdr, 1.0);
   par_stif.Finalize();
   HypreParMatrix *par_S = par_stif.ParallelAssemble();
-  out << "done. Time = " << chrono.RealTime() << " sec" << endl;
+  log << "done. Time = " << chrono.RealTime() << " sec" << endl;
 
   chrono.Clear();
-  out << "Par Mass matrix..." << flush;
+  log << "Par Mass matrix..." << flush;
   ParBilinearForm par_mass(&par_fespace);
   par_mass.AddDomainIntegrator(new VectorMassIntegrator(rho_coef));
   par_mass.Assemble();
   par_mass.EliminateEssentialBCDiag(ess_bdr, numeric_limits<double>::min());
   par_mass.Finalize();
   HypreParMatrix *par_M = par_mass.ParallelAssemble();
-  out << "done. Time = " << chrono.RealTime() << " sec" << endl;
+  log << "done. Time = " << chrono.RealTime() << " sec" << endl;
 
   HypreBoomerAMG amg(*par_S);
   amg.SetPrintLevel(0);
@@ -224,13 +227,16 @@ void compute_interior_basis_CG(ostream &out, const Parameters &param, Mesh *fine
   lobpcg.SetMaxIter(100);
   lobpcg.SetTol(1e-8);
   lobpcg.SetPrecondUsageMode(1);
-  lobpcg.SetPrintLevel(1);
+  lobpcg.SetPrintLevel(0);
   lobpcg.SetMassMatrix(*par_M);
   lobpcg.SetOperator(*par_S);
 
+  chrono.Clear();
+  log << "Solving the eigenproblem..." << endl;
 //  Array<double> eigenvalues;
   lobpcg.Solve();
 //  lobpcg.GetEigenvalues(eigenvalues);
+  log << "done. Time = " << chrono.RealTime() << " sec" << endl;
 
   for (int i = 0; i < n_interior_bf; ++i)
   {
@@ -270,22 +276,24 @@ void compute_interior_basis_CG(ostream &out, const Parameters &param, Mesh *fine
 
 
 static
-void project_to_DG_space(ostream &out, const Parameters &param, Mesh *fine_mesh,
+void project_to_DG_space(ostream &log, const Parameters &param, Mesh *fine_mesh,
                          const DenseMatrix &R_CG, DenseMatrix &R_DG)
 {
   StopWatch chrono;
   chrono.Start();
 
-  out << "FE space generation..." << flush;
+  log << "FE space generation..." << flush;
   H1_FECollection CG_fec(param.method.order, param.dimension);
   DG_FECollection DG_fec(param.method.order, param.dimension);
 
   FiniteElementSpace CG_fespace(fine_mesh, &CG_fec, param.dimension);
   FiniteElementSpace DG_fespace(fine_mesh, &DG_fec, param.dimension);
-  out << "done. Time = " << chrono.RealTime() << " sec" << endl;
+  log << "done. Time = " << chrono.RealTime() << " sec" << endl;
 
   R_DG.SetSize(DG_fespace.GetVSize(), R_CG.NumCols());
 
+  chrono.Clear();
+  log << "Project to DG space..." << flush;
   Vector x, y;
   GridFunction vec_CG;
   for (int c = 0; c < R_CG.NumCols(); ++c)
@@ -300,6 +308,7 @@ void project_to_DG_space(ostream &out, const Parameters &param, Mesh *fine_mesh,
     R_DG.GetColumnReference(c, y);
     y = vec_DG;
   }
+  log << "done. Time = " << chrono.RealTime() << " sec" << endl;
 
   if (param.output.view_dg_basis)
   {
@@ -329,16 +338,16 @@ void project_to_DG_space(ostream &out, const Parameters &param, Mesh *fine_mesh,
 
 
 void ElasticWave::
-compute_basis_CG(ostream &out, Mesh *fine_mesh, int n_boundary_bf, int n_interior_bf,
+compute_basis_CG(ostream &log, Mesh *fine_mesh, int n_boundary_bf, int n_interior_bf,
                  Coefficient &rho_coef, Coefficient &lambda_coef,
                  Coefficient &mu_coef, DenseMatrix &R) const
 {
   DenseMatrix R_CG;
-  compute_boundary_basis_CG(out, param, fine_mesh, n_boundary_bf, n_interior_bf,
+  compute_boundary_basis_CG(log, param, fine_mesh, n_boundary_bf, n_interior_bf,
                             rho_coef, lambda_coef, mu_coef, R_CG);
-  compute_interior_basis_CG(out, param, fine_mesh, n_boundary_bf, n_interior_bf,
+  compute_interior_basis_CG(log, param, fine_mesh, n_boundary_bf, n_interior_bf,
                             rho_coef, lambda_coef, mu_coef, R_CG);
-  project_to_DG_space(out, param, fine_mesh, R_CG, R);
+  project_to_DG_space(log, param, fine_mesh, R_CG, R);
 }
 
 
