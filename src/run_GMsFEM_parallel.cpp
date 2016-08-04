@@ -81,6 +81,62 @@ static void par_time_step(HypreParMatrix &M, HypreParMatrix &S,
 
 
 
+static void par_time_step(HypreParMatrix &A, HypreParMatrix &M, HypreParMatrix &S,
+                          const Vector &b, double timeval, double dt,
+                          Vector &U_0, Vector &U_1, Vector &U_2, ostream &log)
+{
+#ifdef MFEM_DEBUG
+  { double norm = GlobalLpNorm(2, U_0.Norml2(), M.GetComm()); log << "||U_0|| = " << norm << endl; }
+  { double norm = GlobalLpNorm(2, U_1.Norml2(), M.GetComm()); log << "||U_1|| = " << norm << endl; }
+  { double norm = GlobalLpNorm(2, U_2.Norml2(), M.GetComm()); log << "||U_2|| = " << norm << endl; }
+#endif // MFEM_DEBUG
+
+  Vector y = U_1; y *= 2.0; y -= U_2;        // y = 2*u_1 - u_2
+
+#ifdef MFEM_DEBUG
+  { double norm = GlobalLpNorm(2, y.Norml2(), M.GetComm()); log << "||y|| = " << norm << endl; }
+#endif // MFEM_DEBUG
+
+  Vector z0 = U_0;                           // z0 = M * (2*u_1 - u_2)
+  M.Mult(y, z0);
+
+#ifdef MFEM_DEBUG
+  { double norm = GlobalLpNorm(2, z0.Norml2(), M.GetComm()); log << "||z0|| = " << norm << endl; }
+#endif // MFEM_DEBUG
+
+  Vector z1 = U_0;                           // z1 = S * u_1
+  S.Mult(U_1, z1);
+
+#ifdef MFEM_DEBUG
+  { double norm = GlobalLpNorm(2, z1.Norml2(), M.GetComm()); log << "||z1|| = " << norm << endl; }
+#endif // MFEM_DEBUG
+
+  Vector z2 = b; z2 *= timeval; // z2 = timeval*source
+
+#ifdef MFEM_DEBUG
+  { double norm = GlobalLpNorm(2, z2.Norml2(), M.GetComm()); log << "||z2|| = " << norm << endl; }
+#endif // MFEM_DEBUG
+
+  // y = dt^2 * (S*u_1 - timeval*source), where it can be
+  // y = dt^2 * (S*u_1 - ricker*pointforce) OR
+  // y = dt^2 * (S*u_1 - gaussfirstderivative*momenttensor)
+  y = z1; y -= z2; y *= dt*dt;
+
+  // RHS = M*(2*u_1-u_2) - dt^2*(S*u_1-timeval*source)
+  Vector RHS(z0); RHS = z0; RHS -= y;
+
+  A.Mult(RHS, U_0);
+
+#ifdef MFEM_DEBUG
+  { double norm = GlobalLpNorm(2, U_0.Norml2(), M.GetComm()); log << "||U_0|| = " << norm << endl; }
+#endif // MFEM_DEBUG
+
+  U_2 = U_1;
+  U_1 = U_0;
+}
+
+
+
 static void print_par_matrix_matlab(HypreParMatrix &A, const string &filename)
 {
   int myid;
@@ -206,10 +262,8 @@ void ElasticWave::run_GMsFEM_parallel() const
   }
   HypreParVector *b = b_fine.ParallelAssemble();
   const double b_fine_norm = GlobalLpNorm(2, b_fine.Norml2(), MPI_COMM_WORLD);
-  if (myid == 0) {
-    cout << "||b_h||_L2 = " << b_fine_norm << endl
-         << "done. Time = " << chrono.RealTime() << " sec" << endl;
-  }
+  log << "||b_h||_L2 = " << b_fine_norm << endl
+      << "done. Time = " << chrono.RealTime() << " sec" << endl;
 
 /*
   HypreBoomerAMG amg(*M_fine);
@@ -408,6 +462,68 @@ void ElasticWave::run_GMsFEM_parallel() const
   HypreParMatrix *M_coarse = RAP(M_fine, R_global_T);
   HypreParMatrix *S_coarse = RAP(S_fine, R_global_T);
 
+  chrono.Clear();
+  log << "Invert system matrix A..." << endl;
+  HypreParMatrix *A_coarse = RAP(M_fine, R_global_T); // system matrix
+
+  // check that the matrix is block diagonal
+  SparseMatrix A_coarse_offdiag_blocks;
+  int *cmap;
+  A_coarse->GetOffd(A_coarse_offdiag_blocks, cmap);
+  MFEM_VERIFY(A_coarse_offdiag_blocks.GetI()[A_coarse_offdiag_blocks.Height()] == 0,
+              "The off diagonal block is not zero!");
+
+  // inversion of the blocks
+  hypre_ParCSRMatrix *ACoarse = *A_coarse;
+  hypre_CSRMatrix *Adiag = hypre_ParCSRMatrixDiag(ACoarse);
+  const int *Adiag_I = hypre_CSRMatrixI(Adiag);
+  const int *Adiag_J = hypre_CSRMatrixJ(Adiag);
+  double *Adiag_data = hypre_CSRMatrixData(Adiag);
+
+  int offset_J = 0, offset_data = 0;
+  for (size_t r = 0; r < R.size(); ++r)
+  {
+    log << "r " << r << endl;
+    log << "size " << R[r].Width() << " offset_J " << offset_J << " offset_data " << offset_data << endl;
+    DenseMatrix block(R[r].Width());
+    // check that all blocks are on diagonal
+#ifdef MFEM_DEBUG
+    for (int i = 0; i < block.Height(); ++i) {
+      vector<int> diag_J(&Adiag_J[offset_data + i * block.Width()],
+                         &Adiag_J[offset_data + (i + 1) * block.Width()]);
+      sort(diag_J.begin(), diag_J.end());
+      for (int j = 0; j < block.Width(); ++j)
+        MFEM_VERIFY(diag_J[j] == offset_J + j, "Adiag_J has unexpected value");
+    }
+#endif // MFEM_DEBUG
+    // extract the block
+    for (int i = 0, k = 0; i < block.Height(); ++i) {
+      for (int j = 0; j < block.Width(); ++j) {
+        MFEM_ASSERT(Adiag_J[offset_data + k] - offset_J >= 0 &&
+                    Adiag_J[offset_data + k] - offset_J < block.Width(), "Out of range");
+        block(i, Adiag_J[offset_data + k] - offset_J) = Adiag_data[offset_data + k];
+        ++k;
+      }
+    }
+
+    block.Invert();
+
+    // put the inverted block back
+    for (int i = 0, k = 0; i < block.Height(); ++i) {
+      for (int j = 0; j < block.Width(); ++j) {
+        Adiag_data[offset_data + k] = block(i, Adiag_J[offset_data + k] - offset_J);
+        ++k;
+      }
+    }
+
+    offset_J += block.Width();
+    offset_data += block.Height() * block.Width();
+    MFEM_VERIFY(offset_data <= Adiag_I[hypre_CSRMatrixNumRows(Adiag)], "Incorrect diag block");
+  }
+  log << "done. Time = " << chrono.RealTime() << " sec" << endl;
+
+
+
   if (param.output.print_matrices)
   {
     {
@@ -417,7 +533,7 @@ void ElasticWave::run_GMsFEM_parallel() const
       for (size_t r = 0; r < R.size(); ++r) {
         const string fname = string(param.output.directory) + "/r" + d2s(r) + "_local_par.dat." + d2s(myid);
         ofstream mout(fname.c_str());
-        MFEM_VERIFY(mout, "Cannot open file " + fname);
+        MFEM_VERIFY(mout, "Cannot open file " << fname);
         R[r].PrintMatlab(mout);
       }
       if (myid == 0)
@@ -474,6 +590,39 @@ void ElasticWave::run_GMsFEM_parallel() const
         cout << "Output S_coarse matrix..." << flush;
       const string fname = string(param.output.directory) + "/s_coarse_par.dat";
       print_par_matrix_matlab(*S_coarse, fname);
+      if (myid == 0)
+        cout << "done. Time = " << chrono.RealTime() << " sec" << endl;
+    }
+    {
+      chrono.Clear();
+      if (myid == 0)
+        cout << "Output A_coarse matrix..." << flush;
+      const string fname = string(param.output.directory) + "/a_coarse_par.dat";
+      print_par_matrix_matlab(*A_coarse, fname);
+      if (myid == 0)
+        cout << "done. Time = " << chrono.RealTime() << " sec" << endl;
+    }
+    {
+      chrono.Clear();
+      if (myid == 0)
+        cout << "Output A_coarse diag blocks..." << flush;
+      const string fname = string(param.output.directory) + "/a_coarse_diags.dat." + d2s(myid);
+      ofstream mout(fname.c_str());
+      MFEM_VERIFY(mout, "Cannot open file " << fname);
+      SparseMatrix A_coarse_diag_blocks;
+      A_coarse->GetDiag(A_coarse_diag_blocks);
+      A_coarse_diag_blocks.PrintMatlab(mout);
+      if (myid == 0)
+        cout << "done. Time = " << chrono.RealTime() << " sec" << endl;
+    }
+    {
+      chrono.Clear();
+      if (myid == 0)
+        cout << "Output A_coarse offdiag blocks..." << flush;
+      const string fname = string(param.output.directory) + "/m_coarse_offdiags.dat." + d2s(myid);
+      ofstream mout(fname.c_str());
+      MFEM_VERIFY(mout, "Cannot open file " << fname);
+      A_coarse_offdiag_blocks.PrintMatlab(mout);
       if (myid == 0)
         cout << "done. Time = " << chrono.RealTime() << " sec" << endl;
     }
@@ -567,7 +716,7 @@ void ElasticWave::run_GMsFEM_parallel() const
   for (int t_step = 1; t_step <= n_time_steps; ++t_step)
   {
     {
-      par_time_step(*M_coarse, *S_coarse, b_coarse, time_values[t_step-1],
+      par_time_step(*A_coarse, *M_coarse, *S_coarse, b_coarse, time_values[t_step-1],
                     param.dt, U_0, U_1, U_2, log);
     }
 //    {
@@ -672,6 +821,7 @@ void ElasticWave::run_GMsFEM_parallel() const
 
   delete R_global_T;
 
+  delete A_coarse;
   delete S_coarse;
   delete M_coarse;
 
