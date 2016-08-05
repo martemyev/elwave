@@ -202,6 +202,12 @@ public:
    */
   bool serial_solution;
 
+  /**
+   * Print an array of receivers with coordinates and the corresponding cells
+   * of a serial and a parallel grids where each receiver is.
+   */
+  bool cells_containing_receivers;
+
   void AddOptions(mfem::OptionsParser& args);
   void check_parameters() const;
 

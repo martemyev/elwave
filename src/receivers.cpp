@@ -35,19 +35,27 @@ find_cells_containing_receivers(const Mesh &mesh)
   {
     _cells_containing_receivers[p] = 
         find_element(mesh, _receivers[p], cell_limits, throw_exception);
-
-#if defined(SHOW_CELLS_CONTAINING_RECEIVERS)
-    std::cout << p << " ";
-    for (int i = 0; i < mesh.Dimension(); ++i)
-      std::cout << _receivers[p](i) << " ";
-    std::cout << _cells_containing_receivers[p] << " : ";
-    for (size_t i = 0; i < cell_limits.size(); ++i)
-      std::cout << cell_limits[i] << " ";
-    std::cout << std::endl;
-#endif // SHOW_CELLS_CONTAINING_RECEIVERS
   }
 }
 
+#ifdef MFEM_USE_MPI
+void ReceiversSet::find_par_cells_containing_receivers(const ParMesh &par_mesh)
+{
+  MFEM_VERIFY(!_receivers.empty(), "The receivers haven't been distributed yet");
+
+  _par_cells_containing_receivers.clear();
+  _par_cells_containing_receivers.resize(_n_receivers);
+
+  const bool throw_exception = false;
+  std::vector<double> cell_limits(6);
+
+  for (int p = 0; p < _n_receivers; ++p)
+  {
+    _par_cells_containing_receivers[p] = 
+        find_element(par_mesh, _receivers[p], cell_limits, throw_exception);
+  }
+}
+#endif // MFEM_USE_MPI
 
 
 

@@ -1,5 +1,6 @@
 #include "elastic_wave.hpp"
 #include "parameters.hpp"
+#include "receivers.hpp"
 #include "utilities.hpp"
 
 #include <float.h>
@@ -680,6 +681,23 @@ void ElasticWave::run_GMsFEM_parallel() const
     }
   }
 
+  if (param.output.cells_containing_receivers)
+  {
+    for (size_t r = 0; r < param.sets_of_receivers.size(); ++r) {
+      const ReceiversSet *set = param.sets_of_receivers[r];
+      const vector<int> &ser_cells = set->get_cells_containing_receivers();
+      const vector<int> &par_cells = set->get_par_cells_containing_receivers();
+      const vector<Vertex> &receivers = set->get_receivers();
+      log << "receivers set " << r << endl;
+      for (int p = 0; p < set->n_receivers(); ++p) {
+        log << p << " ";
+        for (int d = 0; d < param.dimension; ++d)
+          log << receivers[p](d) << " ";
+        log << " : ser_cell " << ser_cells[p] << " par_cell  " << par_cells[p] << endl;
+      }
+    }
+  }
+
   if (myid == 0) {
     cout << "N time steps = " << n_time_steps
          << "\nTime loop..." << endl;
@@ -771,11 +789,11 @@ void ElasticWave::run_GMsFEM_parallel() const
       x.Save(sol_ofs);
     }
 
-//    if (t_step % param.step_seis == 0) {
+//    if (t_step % param.step_seis == 0)
+//    {
 //      StopWatch timer;
 //      timer.Start();
-//      R_global_T.Mult(U_0, u_0);
-//      output_seismograms(param, *param.mesh, u_0, seisU);
+//      output_seismograms(param, *(param.par_mesh), *R_global_T, U_0, seisU);
 //      timer.Stop();
 //      time_of_seismograms += timer.RealTime();
 //    }

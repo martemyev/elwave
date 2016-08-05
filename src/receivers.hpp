@@ -24,6 +24,17 @@ public:
    */
   void find_cells_containing_receivers(const mfem::Mesh &mesh);
 
+#ifdef MFEM_USE_MPI
+  /**
+   * Find and save the numbers of cells containing the receivers for a parallel
+   * mesh.
+   */
+  void find_par_cells_containing_receivers(const mfem::ParMesh &par_mesh);
+
+  const std::vector<int>& get_par_cells_containing_receivers() const
+  { return _par_cells_containing_receivers; }
+#endif // MFEM_USE_MPI
+
   std::string get_variable() const { return _variable; }
 
   int n_receivers() const { return _n_receivers; }
@@ -72,6 +83,13 @@ protected:
    * Numbers of grid cells containing the receivers.
    */
   std::vector<int> _cells_containing_receivers;
+
+#ifdef MFEM_USE_MPI
+  /**
+   * Numbers of grid cells containing the receivers.
+   */
+  std::vector<int> _par_cells_containing_receivers;
+#endif // MFEM_USE_MPI
 
   /**
    * Dimension of the problem to be solved (affects some features of receivers)

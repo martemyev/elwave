@@ -314,6 +314,7 @@ OutputParameters::OutputParameters()
   , view_interior_basis(false)
   , view_dg_basis(false)
   , serial_solution(false)
+  , cells_containing_receivers(false)
 { }
 
 void OutputParameters::AddOptions(OptionsParser& args)
@@ -335,10 +336,13 @@ void OutputParameters::AddOptions(OptionsParser& args)
   args.AddOption(&view_dg_basis, "-viewdgbasis", "--view-dg-basis",
                  "-no-viewdgbasis", "--no-view-dg-basis",
                  "Visualize DG multiscale basis (via GLVis)");
-  args.AddOption(&serial_solution, "-serial-solution", "--serial-solution",
-                 "-no-serial-solution", "--no-serial-solution",
+  args.AddOption(&serial_solution, "-out-serial-solution", "--output-serial-solution",
+                 "-no-out-serial-solution", "--no-output-serial-solution",
                  "Save parallel solution as it's obtained with a serial code "
                  "(mostly for testing and comparison)");
+  args.AddOption(&cells_containing_receivers, "-out-cells-rec", "--output-cells-receivers",
+                 "-no-out-cells-rec", "--no-output-cells-receivers",
+                 "Output receivers along with cells which contain them");
 }
 
 void OutputParameters::check_parameters() const
@@ -387,6 +391,9 @@ void Parameters::init(int argc, char **argv)
   MPI_Comm_rank(MPI_COMM_WORLD, &myid);
 #endif
 
+  StopWatch chrono;
+  chrono.Start();
+
   OptionsParser args(argc, argv);
 
   args.AddOption(&dimension, "-d", "--dim", "Dimension of wave simulation (2 or 3)");
@@ -418,6 +425,7 @@ void Parameters::init(int argc, char **argv)
 
   check_parameters();
 
+  chrono.Clear();
   if (myid == 0)
     cout << "Mesh initialization..." << endl;
   const int generate_edges = 1;
@@ -478,7 +486,8 @@ void Parameters::init(int argc, char **argv)
 #endif
 
   if (myid == 0)
-    cout << "Mesh initialization is done" << endl;
+    cout << "Mesh initialization is done. Time = " << chrono.RealTime()
+         << " sec" << endl;
 
   media.init(mesh->GetNE());
 
@@ -491,6 +500,9 @@ void Parameters::init(int argc, char **argv)
     mfem_warning("damping layer for absorbing bc should be about 3*wavelength\n");
 
   {
+    if (myid == 0)
+      cout << "Receivers initialization..." << endl;
+    chrono.Clear();
     ifstream in(receivers_file);
     MFEM_VERIFY(in, "The file '" + string(receivers_file) + "' can't be opened");
     string line; // we read the file line-by-line
@@ -512,8 +524,15 @@ void Parameters::init(int argc, char **argv)
       rec_set->init(in); // read the parameters
       rec_set->distribute_receivers();
       rec_set->find_cells_containing_receivers(*mesh);
+#ifdef MFEM_USE_MPI
+      if (!serial)
+        rec_set->find_par_cells_containing_receivers(*par_mesh);
+#endif // MFEM_USE_MPI
       sets_of_receivers.push_back(rec_set); // put this set in the vector
     }
+    if (myid == 0)
+      cout << "Receivers initialization is done. Time = " << chrono.RealTime()
+           << " sec" << endl;
   }
 
   {

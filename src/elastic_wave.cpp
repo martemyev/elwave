@@ -224,6 +224,42 @@ void output_seismograms(const Parameters& param, const Mesh& mesh,
 
 
 
+//void output_seismograms(const Parameters& param, const ParMesh& par_mesh,
+//                        const HypreParMatrix &RT, const Vector &U,
+//                        ofstream* &seisU)
+//{
+//  const int dim = mesh.Dimension();
+
+//  // for each set of receivers
+//  for (size_t rec = 0; rec < param.sets_of_receivers.size(); ++rec)
+//  {
+//    const ReceiversSet *rec_set = param.sets_of_receivers[rec];
+//    const string variable = rec_set->get_variable();
+
+//    // Displacement
+//    if (variable.find("U") != string::npos) {
+//      for (int c = 0; c < dim; ++c) {
+//        MFEM_VERIFY(seisU[rec*dim+c].is_open(), "The stream for "
+//                    "writing displacement seismograms is not open");
+//      }
+//      // displacement at the receivers
+//      const Vector u =
+//        compute_function_at_points(par_mesh, rec_set->n_receivers(),
+//                                   &(rec_set->get_receivers()[0]),
+//                                   &(rec_set->get_cells_containing_receivers()[0]), RT, U);
+//      MFEM_ASSERT(u.Size() == dim*rec_set->n_receivers(), "Sizes mismatch");
+//      for (int i = 0; i < u.Size(); i += dim) {
+//        for (int j = 0; j < dim; ++j) {
+//          float val = u(i+j); // displacement
+//          seisU[rec*dim + j].write(reinterpret_cast<char*>(&val), sizeof(val));
+//        }
+//      }
+//    }
+//  } // loop over receiver sets
+//}
+
+
+
 void solve_dsygvd(const DenseMatrix &A, const DenseMatrix &B, DenseMatrix &eigenvectors)
 {
   int ITYPE = 1; // solve Ax = \lambda Bx
