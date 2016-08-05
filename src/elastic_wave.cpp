@@ -125,6 +125,28 @@ Vector compute_function_at_points(const Mesh& mesh, int n_points,
 
 
 
+void compute_function_at_points(const ReceiversSet &rec_set,
+                                ParFiniteElementSpace &fespace,
+                                HypreParVector &U, vector<double> &U_at_points)
+{
+  const int dim = fespace.GetMesh()->Dimension();
+  const vector<Vertex> &receivers = rec_set.get_receivers();
+  const vector<int> &par_cells = rec_set.get_par_cells_containing_receivers();
+
+  ParGridFunction U_grid_func(&fespace, &U);
+  for (size_t p = 0; p < receivers.size(); ++p) {
+    if (par_cells[p] < 0)
+      continue;
+    Vector values = compute_function_at_point(*(fespace.GetMesh()), receivers[p],
+                                              par_cells[p], U_grid_func);
+    MFEM_ASSERT(values.Size() == dim, "Unexpected vector size");
+    for (int c = 0; c < dim; ++c)
+      U_at_points[p*dim + c] = values(c);
+  }
+}
+
+
+
 void open_seismo_outs(ofstream* &seisU, ofstream* &seisV,
                       const Parameters &param, const string &method_name)
 {
@@ -224,39 +246,70 @@ void output_seismograms(const Parameters& param, const Mesh& mesh,
 
 
 
-//void output_seismograms(const Parameters& param, const ParMesh& par_mesh,
-//                        const HypreParMatrix &RT, const Vector &U,
-//                        ofstream* &seisU)
-//{
-//  const int dim = mesh.Dimension();
+#ifdef MFEM_USE_MPI
+void par_output_seismograms(const Parameters& param,
+                            ParFiniteElementSpace &fespace,
+                            const HypreParMatrix &RT,
+                            const Vector &U, ofstream* &seisU)
+{
+  int myid;
+  MPI_Comm_rank(MPI_COMM_WORLD, &myid);
 
-//  // for each set of receivers
-//  for (size_t rec = 0; rec < param.sets_of_receivers.size(); ++rec)
-//  {
-//    const ReceiversSet *rec_set = param.sets_of_receivers[rec];
-//    const string variable = rec_set->get_variable();
+  const int dim = param.dimension;
 
-//    // Displacement
-//    if (variable.find("U") != string::npos) {
-//      for (int c = 0; c < dim; ++c) {
-//        MFEM_VERIFY(seisU[rec*dim+c].is_open(), "The stream for "
-//                    "writing displacement seismograms is not open");
-//      }
-//      // displacement at the receivers
-//      const Vector u =
-//        compute_function_at_points(par_mesh, rec_set->n_receivers(),
-//                                   &(rec_set->get_receivers()[0]),
-//                                   &(rec_set->get_cells_containing_receivers()[0]), RT, U);
-//      MFEM_ASSERT(u.Size() == dim*rec_set->n_receivers(), "Sizes mismatch");
-//      for (int i = 0; i < u.Size(); i += dim) {
-//        for (int j = 0; j < dim; ++j) {
-//          float val = u(i+j); // displacement
-//          seisU[rec*dim + j].write(reinterpret_cast<char*>(&val), sizeof(val));
-//        }
-//      }
-//    }
-//  } // loop over receiver sets
-//}
+  // for each set of receivers
+  for (size_t rec = 0; rec < param.sets_of_receivers.size(); ++rec) {
+    const ReceiversSet *rec_set = param.sets_of_receivers[rec];
+    const string variable = rec_set->get_variable();
+
+    // Displacement
+    if (variable.find("U") != string::npos) {
+      if (myid == 0) {
+        for (int c = 0; c < dim; ++c) {
+          MFEM_VERIFY(seisU[rec*dim+c].is_open(), "The stream for "
+                      "writing displacement seismograms is not open");
+        }
+      }
+
+      const vector<Vertex> &receivers = rec_set->get_receivers();
+      const vector<int> &par_cells = rec_set->get_par_cells_containing_receivers();
+
+      HypreParVector *u_fine = NULL;
+      u_fine = new HypreParVector(&fespace);
+      RT.Mult(U, *u_fine);
+
+      bool has_cell = false;
+      for (size_t p = 0; p < par_cells.size(); ++p) {
+        if (par_cells[p] < 0)
+          continue;
+        has_cell = true;
+//        u_fine = new HypreParVector(&fespace);
+//        RT.Mult(U, *u_fine);
+        break;
+      }
+
+      vector<double> u_receivers(dim * receivers.size(), 0.0);
+      if (has_cell) {
+        compute_function_at_points(*rec_set, fespace, *u_fine, u_receivers);
+      }
+      delete u_fine;
+
+      vector<double> U_at_receivers(dim * receivers.size(), 0.0);
+      MPI_Reduce(&u_receivers[0], &U_at_receivers[0], dim * receivers.size(),
+                 MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+
+      if (myid == 0) {
+        for (size_t i = 0; i < U_at_receivers.size(); i += dim) {
+          for (int c = 0; c < dim; ++c) {
+            float val = U_at_receivers[i+c]; // c-th component of displacement
+            seisU[rec*dim + c].write(reinterpret_cast<char*>(&val), sizeof(val));
+          }
+        }
+      }
+    } // variable "U"
+  } // for each set of receivers
+}
+#endif // MFEM_USE_MPI
 
 
 

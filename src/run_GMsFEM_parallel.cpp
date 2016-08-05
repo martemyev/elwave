@@ -758,7 +758,7 @@ void ElasticWave::run_GMsFEM_parallel() const
       R_global_T->Mult(U_0, u_tmp);
       {
         const double norm = GlobalLpNorm(2, u_tmp.Norml2(), MPI_COMM_WORLD);
-        log << "||utmp_H|| = " << norm << endl;
+        log << "t_step " << t_step << " ||utmp_H|| = " << norm << endl;
       }
       if (t_step % param.step_snap == 0) {
         visit_dc.SetCycle(t_step);
@@ -789,14 +789,18 @@ void ElasticWave::run_GMsFEM_parallel() const
       x.Save(sol_ofs);
     }
 
-//    if (t_step % param.step_seis == 0)
-//    {
-//      StopWatch timer;
-//      timer.Start();
-//      output_seismograms(param, *(param.par_mesh), *R_global_T, U_0, seisU);
-//      timer.Stop();
-//      time_of_seismograms += timer.RealTime();
-//    }
+    if (t_step % param.step_seis == 0)
+    {
+      StopWatch timer;
+      timer.Start();
+      if (myid == 0)
+        cout << "t_step " << t_step << " output seismograms..." << flush;
+      par_output_seismograms(param, fespace, *R_global_T, U_0, seisU);
+      if (myid == 0)
+        cout << "done" << endl;
+      timer.Stop();
+      time_of_seismograms += timer.RealTime();
+    }
 
     if (param.output.serial_solution && t_step % param.step_seis == 0)
     {

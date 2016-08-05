@@ -29,21 +29,23 @@ int main(int argc, char *argv[])
     return 0;
   }
 
-#if defined(MFEM_DEBUG)
+#ifdef MFEM_DEBUG
   if (myid == 0)
   {
     cout << "****************************\n";
     cout << "*     DEBUG VERSION        *\n";
     cout << "****************************\n";
   }
-#endif
+#endif // MFEM_DEBUG
 
-  if (size > 1 && myid == 0)
+#ifdef MFEM_USE_MPI
+  if (myid == 0)
   {
     cout << "****************************\n";
     cout << "PARALLEL: size " << size << "\n";
     cout << "****************************\n";
   }
+#endif // MFEM_USE_MPI
 
   try
   {

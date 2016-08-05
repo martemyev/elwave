@@ -172,6 +172,13 @@ void output_seismograms(const Parameters& param, const mfem::Mesh& mesh,
                         const mfem::GridFunction &U, const mfem::GridFunction &V,
                         std::ofstream* &seisU, std::ofstream* &seisV);
 
+#ifdef MFEM_USE_MPI
+void par_output_seismograms(const Parameters& param,
+                            mfem::ParFiniteElementSpace &fespace,
+                            const mfem::HypreParMatrix &RT,
+                            const mfem::Vector &U, std::ofstream* &seisU);
+#endif // MFEM_USE_MPI
+
 void solve_dsygvd(const mfem::DenseMatrix &A, const mfem::DenseMatrix &B,
                   mfem::DenseMatrix &eigenvectors);
 

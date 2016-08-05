@@ -54,6 +54,29 @@ void ReceiversSet::find_par_cells_containing_receivers(const ParMesh &par_mesh)
     _par_cells_containing_receivers[p] = 
         find_element(par_mesh, _receivers[p], cell_limits, throw_exception);
   }
+
+  int myid, nproc;
+  MPI_Comm_rank(MPI_COMM_WORLD, &myid);
+  MPI_Comm_size(MPI_COMM_WORLD, &nproc);
+  MPI_Status status;
+
+  if (myid == 0) {
+    std::vector<int> all_proc_cells = _par_cells_containing_receivers;
+    for (int proc = 1; proc < nproc; ++proc) {
+      std::vector<int> other_cells(_n_receivers);
+      MPI_Recv(&other_cells[0], _n_receivers, MPI_INT, proc, 201, MPI_COMM_WORLD, &status);
+      for (int rec = 0; rec < _n_receivers; ++rec) {
+        if (all_proc_cells[rec] > -1)
+          other_cells[rec] = -1;
+        else
+          all_proc_cells[rec] = other_cells[rec];
+      }
+      MPI_Send(&other_cells[0], _n_receivers, MPI_INT, proc, 202, MPI_COMM_WORLD);
+    }
+  } else {
+    MPI_Send(&_par_cells_containing_receivers[0], _n_receivers, MPI_INT, 0, 201, MPI_COMM_WORLD);
+    MPI_Recv(&_par_cells_containing_receivers[0], _n_receivers, MPI_INT, 0, 202, MPI_COMM_WORLD, &status);
+  }
 }
 #endif // MFEM_USE_MPI
 
