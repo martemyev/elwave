@@ -803,6 +803,18 @@ void ElasticWave::run_GMsFEM_parallel() const
         }
       }
     }
+
+    if (t_step % param.step_seis == 0 || t_step % param.step_snap == 0) {
+      int loc_bad = CheckFinite(u_fine.GetData(), u_fine.Size());
+      int glob_bad = 0;
+      MPI_Reduce(&loc_bad, &glob_bad, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
+      if (myid == 0)
+        MFEM_VERIFY(glob_bad == 0, "The solution has non-finite numbers");
+
+      const double norm = GlobalLpNorm(2, u_fine.Norml2(), MPI_COMM_WORLD);
+      if (myid == 0)
+        MFEM_VERIFY(norm < DIVERGENCE_LIMIT, "The solution diverges (blows up)");
+    }
   }
 
   time_loop_timer.Stop();
