@@ -208,6 +208,11 @@ public:
    */
   bool cells_containing_receivers;
 
+  /**
+   * Format of output of the snapshots: vts, glvis, vtsglvis
+   */
+  const char *snap_format;
+
   void AddOptions(mfem::OptionsParser& args);
   void check_parameters() const;
 
