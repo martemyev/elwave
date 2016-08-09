@@ -266,15 +266,6 @@ void ElasticWave::run_GMsFEM_parallel() const
   log << "||b_h||_L2 = " << b_fine_norm << endl
       << "done. Time = " << chrono.RealTime() << " sec" << endl;
 
-/*
-  HypreBoomerAMG amg(*M_fine);
-  HyprePCG pcg(*M_fine);
-  pcg.SetTol(1e-12);
-  pcg.SetMaxIter(200);
-  pcg.SetPrintLevel(2);
-  pcg.SetPreconditioner(amg);
-*/
-
   vector<int> my_cells_dofs;
   my_cells_dofs.reserve(fespace.GetNE() * 10);
   for (int el = 0; el < fespace.GetNE(); ++el)
@@ -290,12 +281,14 @@ void ElasticWave::run_GMsFEM_parallel() const
     }
   }
 
+#ifdef MFEM_DEBUG
   log << "my_cells_dofs:\n";
   for (size_t i = 0; i < my_cells_dofs.size(); ++i) {
     if (my_cells_dofs[i] < 0)
       log << endl;
     log << my_cells_dofs[i] << " ";
   }
+#endif // MFEM_DEBUG
 
   if (myid == 0)
   {
@@ -342,6 +335,7 @@ void ElasticWave::run_GMsFEM_parallel() const
       map_cell_dofs[cellID][i] = my_cells_dofs[k++];
   }
 
+#ifdef MFEM_DEBUG
   log << "map_cell_dofs:\n";
   for (size_t i = 0; i < map_cell_dofs.size(); ++i) {
     log << i << " ";
@@ -349,6 +343,7 @@ void ElasticWave::run_GMsFEM_parallel() const
       log << map_cell_dofs[i][j] << " ";
     log << endl;
   }
+#endif // MFEM_DEBUG
 
   vector<vector<int> > local2global;
   vector<DenseMatrix> R;
@@ -395,24 +390,27 @@ void ElasticWave::run_GMsFEM_parallel() const
   }
   MPI_Bcast(Rrows, size + 1, MPI_INT, 0, MPI_COMM_WORLD);
 
+#ifdef MFEM_DEBUG
   log << "\nRrows: ";
   for (int i = 0; i < size + 1; ++i)
     log << Rrows[i] << " ";
   log << endl;
+#endif // MFEM_DEBUG
 
   const int start_row = Rrows[myid];
   const int end_row   = Rrows[myid + 1];
   MFEM_VERIFY(my_nrows == end_row - start_row, "Number of rows mismatch");
 
+#ifdef MFEM_DEBUG
   const int *S_row_starts = S_fine->RowPart();
   const int *S_col_starts = S_fine->ColPart();
   const int *M_row_starts = M_fine->RowPart();
   const int *M_col_starts = M_fine->ColPart();
-
   log << "S_row_starts: " << S_row_starts[0] << " " << S_row_starts[1] << endl;
   log << "S_col_starts: " << S_col_starts[0] << " " << S_col_starts[1] << endl;
   log << "M_row_starts: " << M_row_starts[0] << " " << M_row_starts[1] << endl;
   log << "M_col_starts: " << M_col_starts[0] << " " << M_col_starts[1] << endl;
+#endif // MFEM_DEBUG
 
   int *Ri = new int[my_nrows + 1];
   int *Rj = new int[my_nnonzero];
@@ -442,8 +440,6 @@ void ElasticWave::run_GMsFEM_parallel() const
   }
 
   // if HYPRE_NO_GLOBAL_PARTITION is ON (it's default)
-//  int myRcols[] = { 0, glob_ncols };
-//  int myRcols[] = { S_row_starts[myid], S_row_starts[myid + 1] };
   int myRrows[] = { start_row, end_row };
 
   /** Creates a general parallel matrix from a local CSR matrix on each
@@ -451,7 +447,7 @@ void ElasticWave::run_GMsFEM_parallel() const
       be of size (local) nrows by (global) glob_ncols. The new parallel matrix
       contains copies of all input arrays (so they can be deleted). */
   HypreParMatrix R_global(MPI_COMM_WORLD, my_nrows, glob_nrows, glob_ncols,
-                          Ri, Rj, Rdata, myRrows, S_fine->RowPart()); // myRcols);
+                          Ri, Rj, Rdata, myRrows, S_fine->RowPart());
 
   HypreParMatrix *R_global_T = R_global.Transpose();
 
@@ -484,11 +480,9 @@ void ElasticWave::run_GMsFEM_parallel() const
   int offset_J = 0, offset_data = 0;
   for (size_t r = 0; r < R.size(); ++r)
   {
-    log << "r " << r << endl;
-    log << "size " << R[r].Width() << " offset_J " << offset_J << " offset_data " << offset_data << endl;
     DenseMatrix block(R[r].Width());
-    // check that all blocks are on diagonal
 #ifdef MFEM_DEBUG
+    // check that all blocks are on diagonal
     for (int i = 0; i < block.Height(); ++i) {
       vector<int> diag_J(&Adiag_J[offset_data + i * block.Width()],
                          &Adiag_J[offset_data + (i + 1) * block.Width()]);
@@ -522,7 +516,6 @@ void ElasticWave::run_GMsFEM_parallel() const
     MFEM_VERIFY(offset_data <= Adiag_I[hypre_CSRMatrixNumRows(Adiag)], "Incorrect diag block");
   }
   log << "done. Time = " << chrono.RealTime() << " sec" << endl;
-
 
 
   if (param.output.print_matrices)
@@ -631,7 +624,6 @@ void ElasticWave::run_GMsFEM_parallel() const
 
   HypreParVector b_coarse(*M_coarse);
   R_global.Mult(*b, b_coarse);
-
   {
     const double norm = GlobalLpNorm(2, b_coarse.Norml2(), MPI_COMM_WORLD);
     log << "||b_H|| = " << norm << endl;
@@ -649,10 +641,9 @@ void ElasticWave::run_GMsFEM_parallel() const
     cout << "done. Time = " << chrono.RealTime() << " sec" << endl;
   }
 
-  HypreParVector U_0(*M_coarse);
-  U_0 = 0.0;
-  HypreParVector U_1(U_0); U_1 = 0.0;
-  HypreParVector U_2(U_0); U_2 = 0.0;
+  HypreParVector U_0(*M_coarse); U_0 = 0.0;
+  HypreParVector U_1(*M_coarse); U_1 = 0.0;
+  HypreParVector U_2(*M_coarse); U_2 = 0.0;
   ParGridFunction u_0(&fespace);
 
   const int n_time_steps = param.T / param.dt + 0.5; // nearest integer
@@ -673,12 +664,14 @@ void ElasticWave::run_GMsFEM_parallel() const
       for (int d = 0; d < loc_vdofs.Size(); ++d)
         loc2globSerial[loc_vdofs[d]] = glob_vdofs[d];
     }
+#ifdef MFEM_DEBUG
     log << "loc2globSerial" << endl;
     for (size_t i = 0; i < loc2globSerial.size(); ++i) {
       log << i << " " << loc2globSerial[i] << endl;
       MFEM_ASSERT(loc2globSerial[i] >= 0, "Local index " << i << " is not "
                   "mapped to a global one");
     }
+#endif // MFEM_DEBUG
   }
 
   if (param.output.cells_containing_receivers)
@@ -715,14 +708,12 @@ void ElasticWave::run_GMsFEM_parallel() const
   const string pref_path = string(param.output.directory) + "/" + SNAPSHOTS_DIR;
   VisItDataCollection visit_dc(name.c_str(), param.par_mesh);
   visit_dc.SetPrefixPath(pref_path.c_str());
-//  visit_dc.RegisterField("fine_displacement", &u_fine_0);
-  visit_dc.RegisterField("coarse_displacement", &u_0);
+  visit_dc.RegisterField("GMs_U", &u_0);
   {
     visit_dc.SetCycle(0);
     visit_dc.SetTime(0.0);
     HypreParVector u_tmp(&fespace);
     R_global_T->Mult(U_0, u_tmp);
-    //u_0.MakeRef(&fespace, u_tmp, 0);
     u_0 = u_tmp;
     visit_dc.Save();
   }
@@ -731,16 +722,12 @@ void ElasticWave::run_GMsFEM_parallel() const
   time_loop_timer.Start();
   double time_of_snapshots = 0.;
   double time_of_seismograms = 0.;
+
+  HypreParVector u_fine(&fespace);
   for (int t_step = 1; t_step <= n_time_steps; ++t_step)
   {
-    {
-      par_time_step(*A_coarse, *M_coarse, *S_coarse, b_coarse, time_values[t_step-1],
-                    param.dt, U_0, U_1, U_2, log);
-    }
-//    {
-//      time_step(M_fine, S_fine, b_fine, time_values[t_step-1],
-//                param.dt, SysFine, PrecFine, u_fine_0, u_fine_1, u_fine_2);
-//    }
+    par_time_step(*A_coarse, *M_coarse, *S_coarse, b_coarse, time_values[t_step-1],
+                  param.dt, U_0, U_1, U_2, log);
 
     // Compute and print the L^2 norm of the error
     if (t_step % tenth == 0) {
@@ -751,55 +738,49 @@ void ElasticWave::run_GMsFEM_parallel() const
       }
     }
 
-    {
+    if (t_step % param.step_snap == 0) {
       StopWatch timer;
       timer.Start();
-      if (t_step % param.step_snap == 0) {
-        HypreParVector u_tmp(&fespace);
-        R_global_T->Mult(U_0, u_tmp);
+      R_global_T->Mult(U_0, u_fine);
 #ifdef MFEM_DEBUG
-        const double norm = GlobalLpNorm(2, u_tmp.Norml2(), MPI_COMM_WORLD);
-        log << "t_step " << t_step << " ||utmp_H|| = " << norm << endl;
+      const double norm = GlobalLpNorm(2, u_fine.Norml2(), MPI_COMM_WORLD);
+      log << "t_step " << t_step << " ||u_h|| = " << norm << endl;
 #endif // MFEM_DEBUG
+      if (!strstr(param.output.snap_format, "vts")) {
         visit_dc.SetCycle(t_step);
         visit_dc.SetTime(t_step*param.dt);
-        //u_0.MakeRef(&fespace, u_tmp, 0);
-        u_0 = u_tmp;
+        u_0 = u_fine;
         visit_dc.Save();
+      }
+      if (!strstr(param.output.snap_format, "glvis")) {
+        ostringstream mesh_name, sol_name;
+        mesh_name << param.output.directory << "/" << param.output.extra_string << "_mesh." << setfill('0') << setw(6) << myid;
+        sol_name << param.output.directory << "/" << param.output.extra_string << "_sol_t" << t_step << "." << setfill('0') << setw(6) << myid;
+
+        ofstream mesh_ofs(mesh_name.str().c_str());
+        mesh_ofs.precision(8);
+        param.par_mesh->Print(mesh_ofs);
+
+        ofstream sol_ofs(sol_name.str().c_str());
+        sol_ofs.precision(8);
+        ParGridFunction x(&fespace, &u_fine);
+        x.Save(sol_ofs);
       }
       timer.Stop();
       time_of_snapshots += timer.RealTime();
     }
 
-    if (t_step % param.step_snap == 0)
-    {
-      ostringstream mesh_name, sol_name;
-      mesh_name << param.output.directory << "/" << param.output.extra_string << "_mesh." << setfill('0') << setw(6) << myid;
-      sol_name << param.output.directory << "/" << param.output.extra_string << "_sol_t" << t_step << "." << setfill('0') << setw(6) << myid;
-
-      ofstream mesh_ofs(mesh_name.str().c_str());
-      mesh_ofs.precision(8);
-      param.par_mesh->Print(mesh_ofs);
-
-      ofstream sol_ofs(sol_name.str().c_str());
-      sol_ofs.precision(8);
-      HypreParVector u_tmp(&fespace);
-      R_global_T->Mult(U_0, u_tmp);
-      ParGridFunction x(&fespace, &u_tmp);
-      x.Save(sol_ofs);
-    }
-
-    if (t_step % param.step_seis == 0)
-    {
+    if (t_step % param.step_seis == 0) {
       StopWatch timer;
       timer.Start();
-      par_output_seismograms(param, fespace, *R_global_T, U_0, seisU);
+      if (t_step % param.step_snap != 0)
+        R_global_T->Mult(U_0, u_fine);
+      par_output_seismograms(param, fespace, u_fine, seisU);
       timer.Stop();
       time_of_seismograms += timer.RealTime();
     }
 
-    if (param.output.serial_solution && t_step % param.step_seis == 0)
-    {
+    if (param.output.serial_solution && t_step % param.step_seis == 0) {
       vector<double> glob_U(n_dofs, 0.);
       vector<double> glob_solution(n_dofs, 0.);
 

@@ -249,8 +249,8 @@ void output_seismograms(const Parameters& param, const Mesh& mesh,
 #ifdef MFEM_USE_MPI
 void par_output_seismograms(const Parameters& param,
                             ParFiniteElementSpace &fespace,
-                            const HypreParMatrix &RT,
-                            const Vector &U, ofstream* &seisU)
+                            HypreParVector &U_fine,
+                            ofstream* &seisU)
 {
   int myid;
   MPI_Comm_rank(MPI_COMM_WORLD, &myid);
@@ -274,25 +274,18 @@ void par_output_seismograms(const Parameters& param,
       const vector<Vertex> &receivers = rec_set->get_receivers();
       const vector<int> &par_cells = rec_set->get_par_cells_containing_receivers();
 
-      HypreParVector *u_fine = NULL;
-      u_fine = new HypreParVector(&fespace);
-      RT.Mult(U, *u_fine);
-
       bool has_cell = false;
       for (size_t p = 0; p < par_cells.size(); ++p) {
         if (par_cells[p] < 0)
           continue;
         has_cell = true;
-//        u_fine = new HypreParVector(&fespace);
-//        RT.Mult(U, *u_fine);
         break;
       }
 
       vector<double> u_receivers(dim * receivers.size(), 0.0);
       if (has_cell) {
-        compute_function_at_points(*rec_set, fespace, *u_fine, u_receivers);
+        compute_function_at_points(*rec_set, fespace, U_fine, u_receivers);
       }
-      delete u_fine;
 
       vector<double> U_at_receivers(dim * receivers.size(), 0.0);
       MPI_Reduce(&u_receivers[0], &U_at_receivers[0], dim * receivers.size(),
