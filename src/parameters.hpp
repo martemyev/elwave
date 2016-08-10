@@ -216,6 +216,13 @@ public:
   void AddOptions(mfem::OptionsParser& args);
   void check_parameters() const;
 
+  bool snap_format_VTS() const {
+    return (strstr(snap_format, "vts") != NULL);
+  }
+  bool snap_format_GLVis() const {
+    return (strstr(snap_format, "glvis") != NULL);
+  }
+
 private:
   OutputParameters(const OutputParameters&);
   OutputParameters& operator =(const OutputParameters&);

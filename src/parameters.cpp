@@ -350,8 +350,8 @@ void OutputParameters::AddOptions(OptionsParser& args)
 
 void OutputParameters::check_parameters() const
 {
-  MFEM_VERIFY(strstr(snap_format, "vts") != NULL || strstr(snap_format, "glvis") != NULL,
-              "Format of the output of snapshots is unknown");
+  MFEM_VERIFY(snap_format_VTS() || snap_format_GLVis(), "Format of the output "
+              "of snapshots is unknown");
 }
 
 

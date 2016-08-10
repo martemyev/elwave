@@ -390,6 +390,7 @@ void ElasticWave::run_GMsFEM_serial() const
   time_loop_timer.Stop();
 
   delete[] seisU;
+  delete[] seisV;
 
   cout << "Time loop is over\n\tpure time = " << time_loop_timer.UserTime()
        << "\n\ttime of snapshots = " << time_of_snapshots

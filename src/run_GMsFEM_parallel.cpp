@@ -645,6 +645,7 @@ void ElasticWave::run_GMsFEM_parallel() const
   HypreParVector U_1(*M_coarse); U_1 = 0.0;
   HypreParVector U_2(*M_coarse); U_2 = 0.0;
   ParGridFunction u_0(&fespace);
+  HypreParVector u_fine(&fespace);
 
   const int n_time_steps = param.T / param.dt + 0.5; // nearest integer
   const int tenth = 0.1 * n_time_steps;
@@ -707,15 +708,30 @@ void ElasticWave::run_GMsFEM_parallel() const
   const string name = method_name + param.output.extra_string;
   const string pref_path = string(param.output.directory) + "/" + SNAPSHOTS_DIR;
   VisItDataCollection visit_dc(name.c_str(), param.par_mesh);
-  visit_dc.SetPrefixPath(pref_path.c_str());
-  visit_dc.RegisterField("GMs_U", &u_0);
-  {
-    visit_dc.SetCycle(0);
-    visit_dc.SetTime(0.0);
-    HypreParVector u_tmp(&fespace);
-    R_global_T->Mult(U_0, u_tmp);
-    u_0 = u_tmp;
-    visit_dc.Save();
+  if (param.step_snap <= n_time_steps) {
+    R_global_T->Mult(U_0, u_fine);
+    if (param.output.snap_format_VTS()) {
+      visit_dc.SetPrefixPath(pref_path.c_str());
+      visit_dc.RegisterField("GMs_U", &u_0);
+      visit_dc.SetCycle(0);
+      visit_dc.SetTime(0.0);
+      u_0 = u_fine;
+      visit_dc.Save();
+    }
+    if (param.output.snap_format_GLVis()) {
+      ostringstream mesh_name;
+      mesh_name << param.output.directory << "/" << param.output.extra_string << "_mesh." << setfill('0') << setw(6) << myid;
+      ofstream mesh_ofs(mesh_name.str().c_str());
+      mesh_ofs.precision(8);
+      param.par_mesh->Print(mesh_ofs);
+
+      ostringstream sol_name;
+      sol_name << param.output.directory << "/" << param.output.extra_string << "_sol_t0." << setfill('0') << setw(6) << myid;
+      ofstream sol_ofs(sol_name.str().c_str());
+      sol_ofs.precision(8);
+      ParGridFunction x(&fespace, &u_fine);
+      x.Save(sol_ofs);
+    }
   }
 
   StopWatch time_loop_timer;
@@ -723,7 +739,7 @@ void ElasticWave::run_GMsFEM_parallel() const
   double time_of_snapshots = 0.;
   double time_of_seismograms = 0.;
 
-  HypreParVector u_fine(&fespace);
+
   for (int t_step = 1; t_step <= n_time_steps; ++t_step)
   {
     par_time_step(*A_coarse, *M_coarse, *S_coarse, b_coarse, time_values[t_step-1],
@@ -746,21 +762,15 @@ void ElasticWave::run_GMsFEM_parallel() const
       const double norm = GlobalLpNorm(2, u_fine.Norml2(), MPI_COMM_WORLD);
       log << "t_step " << t_step << " ||u_h|| = " << norm << endl;
 #endif // MFEM_DEBUG
-      if (!strstr(param.output.snap_format, "vts")) {
+      if (param.output.snap_format_VTS()) {
         visit_dc.SetCycle(t_step);
         visit_dc.SetTime(t_step*param.dt);
         u_0 = u_fine;
         visit_dc.Save();
       }
-      if (!strstr(param.output.snap_format, "glvis")) {
-        ostringstream mesh_name, sol_name;
-        mesh_name << param.output.directory << "/" << param.output.extra_string << "_mesh." << setfill('0') << setw(6) << myid;
+      if (param.output.snap_format_GLVis()) {
+        ostringstream sol_name;
         sol_name << param.output.directory << "/" << param.output.extra_string << "_sol_t" << t_step << "." << setfill('0') << setw(6) << myid;
-
-        ofstream mesh_ofs(mesh_name.str().c_str());
-        mesh_ofs.precision(8);
-        param.par_mesh->Print(mesh_ofs);
-
         ofstream sol_ofs(sol_name.str().c_str());
         sol_ofs.precision(8);
         ParGridFunction x(&fespace, &u_fine);
