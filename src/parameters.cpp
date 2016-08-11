@@ -315,7 +315,7 @@ OutputParameters::OutputParameters()
   , view_dg_basis(false)
   , serial_solution(false)
   , cells_containing_receivers(false)
-  , snap_format("vts")
+  , snap_format("visit")
 { }
 
 void OutputParameters::AddOptions(OptionsParser& args)
@@ -345,12 +345,12 @@ void OutputParameters::AddOptions(OptionsParser& args)
                  "-no-out-cells-rec", "--no-output-cells-receivers",
                  "Output receivers along with cells which contain them");
   args.AddOption(&snap_format, "-snap-format", "--snapshot-format", "Format "
-                 "of the output of snapshots: vts, glvis, vtsglvis");
+                 "of the output of snapshots: visit, glvis, visitglvis");
 }
 
 void OutputParameters::check_parameters() const
 {
-  MFEM_VERIFY(snap_format_VTS() || snap_format_GLVis(), "Format of the output "
+  MFEM_VERIFY(snap_format_VisIt() || snap_format_GLVis(), "Format of the output "
               "of snapshots is unknown");
 }
 

@@ -209,15 +209,15 @@ public:
   bool cells_containing_receivers;
 
   /**
-   * Format of output of the snapshots: vts, glvis, vtsglvis
+   * Format of output of the snapshots: visit, glvis, visitglvis
    */
   const char *snap_format;
 
   void AddOptions(mfem::OptionsParser& args);
   void check_parameters() const;
 
-  bool snap_format_VTS() const {
-    return (strstr(snap_format, "vts") != NULL);
+  bool snap_format_VisIt() const {
+    return (strstr(snap_format, "visit") != NULL);
   }
   bool snap_format_GLVis() const {
     return (strstr(snap_format, "glvis") != NULL);

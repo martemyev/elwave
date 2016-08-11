@@ -710,7 +710,7 @@ void ElasticWave::run_GMsFEM_parallel() const
   VisItDataCollection visit_dc(name.c_str(), param.par_mesh);
   if (param.step_snap <= n_time_steps) {
     R_global_T->Mult(U_0, u_fine);
-    if (param.output.snap_format_VTS()) {
+    if (param.output.snap_format_VisIt()) {
       visit_dc.SetPrefixPath(pref_path.c_str());
       visit_dc.RegisterField("GMs_U", &u_0);
       visit_dc.SetCycle(0);
@@ -762,7 +762,7 @@ void ElasticWave::run_GMsFEM_parallel() const
       const double norm = GlobalLpNorm(2, u_fine.Norml2(), MPI_COMM_WORLD);
       log << "t_step " << t_step << " ||u_h|| = " << norm << endl;
 #endif // MFEM_DEBUG
-      if (param.output.snap_format_VTS()) {
+      if (param.output.snap_format_VisIt()) {
         visit_dc.SetCycle(t_step);
         visit_dc.SetTime(t_step*param.dt);
         u_0 = u_fine;
