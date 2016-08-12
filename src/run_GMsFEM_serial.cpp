@@ -149,7 +149,8 @@ void ElasticWave::run_GMsFEM_serial() const
 
   vector<DenseMatrix> R;
   vector<vector<int> > local2global;
-  compute_R_matrices(cout, map_cell_dofs, local2global, R);
+  compute_R_matrices(cout, param.map_coarse_cell_fine_cells, map_cell_dofs,
+                     local2global, R);
 
   // global sparse R matrix
   int n_rows = 0;

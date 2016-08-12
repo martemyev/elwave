@@ -388,6 +388,17 @@ Parameters::~Parameters()
   delete mesh;
 }
 
+static void fill_up_n_fine_cells_per_coarse(int n_fine, int n_coarse,
+                                            std::vector<int> &result)
+{
+  const int k = n_fine / n_coarse;
+  for (size_t i = 0; i < result.size(); ++i)
+    result[i] = k;
+  const int p = n_fine % n_coarse;
+  for (int i = 0; i < p; ++i)
+    ++result[i];
+}
+
 void Parameters::init(int argc, char **argv)
 {
   int myid = 0;
@@ -468,16 +479,87 @@ void Parameters::init(int argc, char **argv)
   {
     if (myid == 0)
       cout << "  Generating mesh" << endl;
-    if (dimension == 2)
-    {
+
+    int n_coarse_cells = method.gms_Nx * method.gms_Ny;
+
+    vector<int> n_fine_cell_per_coarse_x(method.gms_Nx);
+    fill_up_n_fine_cells_per_coarse(grid.nx, method.gms_Nx,
+                                    n_fine_cell_per_coarse_x);
+
+    vector<int> n_fine_cell_per_coarse_y(method.gms_Ny);
+    fill_up_n_fine_cells_per_coarse(grid.ny, method.gms_Ny,
+                                    n_fine_cell_per_coarse_y);
+
+    if (dimension == 2) {
       mesh = new Mesh(grid.nx, grid.ny, Element::QUADRILATERAL,
                       generate_edges, grid.sx, grid.sy);
-    }
-    else
-    {
+    } else {
       mesh = new Mesh(grid.nx, grid.ny, grid.nz, Element::HEXAHEDRON,
                       generate_edges, grid.sx, grid.sy, grid.sz);
+
+      n_coarse_cells *= method.gms_Nz;
     }
+
+    vector<int> map_fine_cell_coarse_cell(mesh->GetNE());
+    map_coarse_cell_fine_cells.resize(n_coarse_cells);
+
+
+    if (dimension == 2) {
+      int offset_x, offset_y = 0;
+      for (size_t iy = 0; iy < n_fine_cell_per_coarse_y.size(); ++iy) {
+        const int n_fine_y = n_fine_cell_per_coarse_y[iy];
+        offset_x = 0;
+        for (size_t ix = 0; ix < n_fine_cell_per_coarse_x.size(); ++ix) {
+          const int n_fine_x = n_fine_cell_per_coarse_x[ix];
+          const int global_coarse_cell = iy*method.gms_Nx + ix;
+          map_coarse_cell_fine_cells[global_coarse_cell].resize(n_fine_x * n_fine_y);
+          for (int fiy = 0; fiy < n_fine_y; ++fiy) {
+            for (int fix = 0; fix < n_fine_x; ++fix) {
+              const int loc_fine_cell = fiy*n_fine_x + fix;
+              const int glob_fine_cell = (offset_y + fiy) * grid.nx + (offset_x + fix);
+              map_fine_cell_coarse_cell[glob_fine_cell] = global_coarse_cell;
+              map_coarse_cell_fine_cells[global_coarse_cell][loc_fine_cell] = glob_fine_cell;
+            }
+          }
+          offset_x += n_fine_x;
+        }
+        offset_y += n_fine_y;
+      }
+    } else { // 3D
+      vector<int> n_fine_cell_per_coarse_z(method.gms_Nz);
+      fill_up_n_fine_cells_per_coarse(grid.nz, method.gms_Nz,
+                                      n_fine_cell_per_coarse_z);
+
+      int offset_x, offset_y, offset_z = 0;
+      for (size_t iz = 0; iz < n_fine_cell_per_coarse_z.size(); ++iz) {
+        const int n_fine_z = n_fine_cell_per_coarse_z[iz];
+        offset_y = 0;
+        for (size_t iy = 0; iy < n_fine_cell_per_coarse_y.size(); ++iy) {
+          const int n_fine_y = n_fine_cell_per_coarse_y[iy];
+          offset_x = 0;
+          for (size_t ix = 0; ix < n_fine_cell_per_coarse_x.size(); ++ix) {
+            const int n_fine_x = n_fine_cell_per_coarse_x[ix];
+            const int global_coarse_cell = iz*method.gms_Nx*method.gms_Ny +
+                                           iy*method.gms_Nx + ix;
+            map_coarse_cell_fine_cells[global_coarse_cell].resize(n_fine_x * n_fine_y * n_fine_z);
+            for (int fiz = 0; fiz < n_fine_z; ++fiz) {
+              for (int fiy = 0; fiy < n_fine_y; ++fiy) {
+                for (int fix = 0; fix < n_fine_x; ++fix) {
+                  const int loc_fine_cell = fiz*n_fine_x*n_fine_y + fiy*n_fine_x + fix;
+                  const int glob_fine_cell = (offset_z + fiz) * grid.nx * grid.ny +
+                                             (offset_y + fiy) * grid.nx + (offset_x + fix);
+                  map_fine_cell_coarse_cell[glob_fine_cell] = global_coarse_cell;
+                  map_coarse_cell_fine_cells[global_coarse_cell][loc_fine_cell] = glob_fine_cell;
+                }
+              }
+            }
+            offset_x += n_fine_x;
+          }
+          offset_y += n_fine_y;
+        }
+        offset_z += n_fine_z;
+      }
+    } // 3D
   }
 
   MFEM_VERIFY(mesh->Dimension() == dimension, "Unexpected mesh dimension");
@@ -543,6 +625,7 @@ void Parameters::init(int argc, char **argv)
     string cmd = "mkdir -p " + (string)output.directory + " ; ";
     cmd += "mkdir -p " + (string)output.directory + "/" + SNAPSHOTS_DIR + " ; ";
     cmd += "mkdir -p " + (string)output.directory + "/" + SEISMOGRAMS_DIR + " ; ";
+    cmd += "mkdir -p " + (string)output.directory + "/" + MESHES_DIR + " ; ";
     const int res = system(cmd.c_str());
     MFEM_VERIFY(res == 0, "Failed to create a directory " + (string)output.directory);
   }

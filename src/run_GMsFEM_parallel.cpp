@@ -343,11 +343,20 @@ void ElasticWave::run_GMsFEM_parallel() const
       log << map_cell_dofs[i][j] << " ";
     log << endl;
   }
+
+  log << "map_coarse_cell_fine_cells:\n";
+  for (size_t i = 0; i < param.map_coarse_cell_fine_cells.size(); ++i) {
+    log << i << " ";
+    for (size_t j = 0; j < param.map_coarse_cell_fine_cells[i].size(); ++j)
+      log << param.map_coarse_cell_fine_cells[i][j] << " ";
+    log << endl;
+  }
 #endif // MFEM_DEBUG
 
   vector<vector<int> > local2global;
   vector<DenseMatrix> R;
-  compute_R_matrices(log, map_cell_dofs, local2global, R);
+  compute_R_matrices(log, param.map_coarse_cell_fine_cells, map_cell_dofs,
+                     local2global, R);
 
   // my portion of the global sparse R matrix
   int my_nrows = 0;

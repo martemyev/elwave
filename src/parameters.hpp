@@ -250,6 +250,7 @@ public:
 
   mfem::Mesh *mesh;
   mfem::ParMesh *par_mesh;
+  std::vector<std::vector<int> > map_coarse_cell_fine_cells;
 
   double T; ///< simulation time
   double dt; ///< time step

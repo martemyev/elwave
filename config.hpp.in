@@ -14,6 +14,7 @@
 
 const std::string SEISMOGRAMS_DIR = "seismograms/";
 const std::string SNAPSHOTS_DIR   = "snapshots/";
+const std::string MESHES_DIR      = "meshes/";
 
 const double VERY_SMALL_NUMBER = 1e-32;
 const double FLOAT_NUMBERS_EQUALITY_TOLERANCE = 1e-12;

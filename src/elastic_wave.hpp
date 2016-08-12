@@ -73,6 +73,7 @@ private:
    * local R matrices computations and global indices to assemble a global R.
    */
   void compute_R_matrices(std::ostream &out,
+                          const std::vector<std::vector<int> > &map_coarse_cell_fine_cells,
                           const std::vector<std::vector<int> > &map_cell_dofs,
                           std::vector<std::vector<int> > &local2global,
                           std::vector<mfem::DenseMatrix> &R) const;
