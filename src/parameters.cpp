@@ -474,6 +474,20 @@ void Parameters::init(int argc, char **argv)
     grid.sx = xmax - xmin;
     grid.sy = ymax - ymin;
     grid.sz = zmax - zmin;
+
+    set<int> attributes;
+    for (int el = 0; el < mesh->GetNE(); ++el)
+      attributes.insert(mesh->GetAttribute(el));
+    const int n_coarse_cells = attributes.size();
+    vector<int> map_fine_cell_coarse_cell(mesh->GetNE());
+    map_coarse_cell_fine_cells.resize(n_coarse_cells);
+    for (int el = 0; el < mesh->GetNE(); ++el) {
+      const int coarse_cell_ID = mesh->GetAttribute(el) - 1; // MFEM can't accept 0 attribute
+      MFEM_VERIFY(coarse_cell_ID >= 0 && coarse_cell_ID < n_coarse_cells,
+                  "Coarse cell ID " << coarse_cell_ID << " is out of range");
+      map_fine_cell_coarse_cell[el] = coarse_cell_ID;
+      map_coarse_cell_fine_cells[coarse_cell_ID].push_back(el);
+    }
   }
   else
   {
