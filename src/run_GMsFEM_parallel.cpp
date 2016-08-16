@@ -353,10 +353,16 @@ void ElasticWave::run_GMsFEM_parallel() const
   }
 #endif // MFEM_DEBUG
 
+  if (myid == 0)
+    cout << "Computation of basis functions..." << endl;
+  chrono.Clear();
   vector<vector<int> > local2global;
   vector<DenseMatrix> R;
   compute_R_matrices(log, param.map_coarse_cell_fine_cells, map_cell_dofs,
                      local2global, R);
+  if (myid == 0)
+    cout << "Computation of basis functions is done. Time = "
+         << chrono.RealTime() << " sec" << endl;
 
   // my portion of the global sparse R matrix
   int my_nrows = 0;
