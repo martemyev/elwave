@@ -66,7 +66,8 @@ void compute_boundary_basis_CG(ostream &log, const Parameters &param, Mesh *fine
       stif.FormLinearSystem(ess_tdof_list, x, b, A, X, B);
 
       mfem::GSSmoother precond(A);
-      mfem::PCG(A, precond, B, X, 0, maxiter, rtol, atol);
+      mfem::PCG(A, precond, B, X, param.output.snap_space_solver_print_level,
+                maxiter, rtol, atol);
 
       stif.RecoverFEMSolution(X, b, x);
     }
@@ -206,6 +207,7 @@ void compute_interior_basis_CG(ostream &log, const Parameters &param, Mesh *fine
   par_stif.EliminateEssentialBCDiag(ess_bdr, 1.0);
   par_stif.Finalize();
   HypreParMatrix *par_S = par_stif.ParallelAssemble();
+  (*par_S) *= 1e-9;
   log << "done. Time = " << chrono.RealTime() << " sec" << endl;
 
   chrono.Clear();
@@ -216,6 +218,7 @@ void compute_interior_basis_CG(ostream &log, const Parameters &param, Mesh *fine
   par_mass.EliminateEssentialBCDiag(ess_bdr, numeric_limits<double>::min());
   par_mass.Finalize();
   HypreParMatrix *par_M = par_mass.ParallelAssemble();
+  (*par_M) *= 1e-9;
   log << "done. Time = " << chrono.RealTime() << " sec" << endl;
 
   HypreBoomerAMG amg(*par_S);
@@ -227,7 +230,7 @@ void compute_interior_basis_CG(ostream &log, const Parameters &param, Mesh *fine
   lobpcg.SetMaxIter(100);
   lobpcg.SetTol(1e-8);
   lobpcg.SetPrecondUsageMode(1);
-  lobpcg.SetPrintLevel(0);
+  lobpcg.SetPrintLevel(param.output.inter_basis_solver_print_level);
   lobpcg.SetMassMatrix(*par_M);
   lobpcg.SetOperator(*par_S);
 

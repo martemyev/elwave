@@ -316,6 +316,8 @@ OutputParameters::OutputParameters()
   , serial_solution(false)
   , cells_containing_receivers(false)
   , snap_format("visit")
+  , snap_space_solver_print_level(0)
+  , inter_basis_solver_print_level(0)
 { }
 
 void OutputParameters::AddOptions(OptionsParser& args)
@@ -346,12 +348,22 @@ void OutputParameters::AddOptions(OptionsParser& args)
                  "Output receivers along with cells which contain them");
   args.AddOption(&snap_format, "-snap-format", "--snapshot-format", "Format "
                  "of the output of snapshots: visit, glvis, visitglvis");
+  args.AddOption(&snap_space_solver_print_level, "-snap-space-solver-print",
+                 "-snap-space-solver-print-level", "Level of verbosity of a "
+                 "solver used for computation of snapshot space");
+  args.AddOption(&inter_basis_solver_print_level, "-inter-basis-solver-print",
+                 "-inter-basis-solver-print-level", "Level of verbosity of an "
+                 "eigensolver used for computation of interior basis");
 }
 
 void OutputParameters::check_parameters() const
 {
   MFEM_VERIFY(snap_format_VisIt() || snap_format_GLVis(), "Format of the output "
               "of snapshots is unknown");
+  MFEM_VERIFY(snap_space_solver_print_level >= 0, "snap_space_solver_print_level "
+              "should be >= 0");
+  MFEM_VERIFY(inter_basis_solver_print_level >= 0, "inter_basis_solver_print_level "
+              "should be >= 0");
 }
 
 

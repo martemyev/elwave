@@ -213,6 +213,17 @@ public:
    */
   const char *snap_format;
 
+  /**
+   * Level of verbosity of a solver that is used to compute the snapshot space.
+   */
+  int snap_space_solver_print_level;
+
+  /**
+   * Level of verbosity of an eigensolver that is used in the computation of the
+   * multiscale interior basis functions.
+   */
+  int inter_basis_solver_print_level;
+
   void AddOptions(mfem::OptionsParser& args);
   void check_parameters() const;
 
